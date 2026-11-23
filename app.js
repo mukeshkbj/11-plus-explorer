@@ -5,10 +5,10 @@
 // ---------------------------------------------------------------- setup
 const KEY = 'elevenplus.v1';
 const SUBJECTS = [
-  { id: 'maths', name: 'Maths', icon: '➗' },
-  { id: 'english', name: 'English', icon: '📖' },
-  { id: 'vr', name: 'Verbal Reasoning', icon: '🔤' },
-  { id: 'nvr', name: 'Non-Verbal Reasoning', icon: '🔷' }
+  { id: 'maths', name: 'Maths', icon: '➗', c: '#3b5bdb' },
+  { id: 'english', name: 'English', icon: '📖', c: '#ae3ec9' },
+  { id: 'vr', name: 'Verbal Reasoning', icon: '🔤', c: '#e8590c' },
+  { id: 'nvr', name: 'Non-Verbal Reasoning', icon: '🔷', c: '#0c8599' }
 ];
 // The exam setting changes the pace of timed tests. More differences can hang off this later (mock exam formats).
 const BOARDS = {
@@ -158,10 +158,150 @@ function record(q, ok, mode) {
 }
 let awards = [];
 function award(id) { if (!st.badges[id]) { st.badges[id] = today(); awards.push(id); } }
-function badgeName(id) {
-  if (id.startsWith('t:')) { const [sid, tid] = id.slice(2).split('/'); const t = ready(sid) && topicOf(sid, tid); return (t ? t.name : tid) + ' star'; }
-  return { streak3: '3-day streak', streak7: '7-day streak', streak14: '14-day streak', streak30: '30-day streak', test80: 'Speedy thinker', tests10: '10 timed tests', mock1: 'First mock exam', mock80: 'Mock exam star', stars100: '100 stars', stars500: '500 stars', stars1000: '1,000 stars', fix1: 'Mistake fixer', focus1: 'Weak-spot warrior', perfect: 'Perfect paper' }[id] || id;
+// Every badge a child can earn, in the order the trophy room shows them.
+const BADGES = [
+  { id: 'first', icon: '🚀', name: 'Blast off', how: 'Finish your very first activity' },
+  { id: 'lesson10', icon: '📚', name: 'Bookworm', how: 'Read 10 different lessons' },
+  { id: 'allfour', icon: '🌈', name: 'All-rounder', how: 'Practise all four subjects' },
+  { id: 'streak3', icon: '🔥', name: '3-day streak', how: 'Practise 3 days in a row' },
+  { id: 'streak7', icon: '🔥', name: '7-day streak', how: 'Practise 7 days in a row' },
+  { id: 'streak14', icon: '☄️', name: '14-day streak', how: 'Practise 14 days in a row' },
+  { id: 'streak30', icon: '🌋', name: '30-day streak', how: 'Practise 30 days in a row' },
+  { id: 'stars100', icon: '⭐', name: '100 stars', how: 'Collect 100 stars' },
+  { id: 'stars500', icon: '🌟', name: '500 stars', how: 'Collect 500 stars' },
+  { id: 'stars1000', icon: '💫', name: '1,000 stars', how: 'Collect 1,000 stars' },
+  { id: 'topics5', icon: '🎖️', name: 'Topic collector', how: 'Earn 5 topic stars (8 out of 10 in a topic quiz)' },
+  { id: 'topics20', icon: '🏵️', name: 'Topic master', how: 'Earn 20 topic stars' },
+  { id: 'test80', icon: '⚡', name: 'Speedy thinker', how: 'Score 80% or more in a 10-minute test' },
+  { id: 'perfect', icon: '💯', name: 'Perfect paper', how: 'Get every question right in a timed test' },
+  { id: 'tests10', icon: '⏱️', name: 'Test tackler', how: 'Finish 10 timed tests' },
+  { id: 'comeback', icon: '📈', name: 'Comeback kid', how: 'Beat your last score on the same kind of test by 20% or more' },
+  { id: 'fix1', icon: '🔧', name: 'Mistake fixer', how: 'Score 70% or more in Fix my mistakes' },
+  { id: 'focus1', icon: '🎯', name: 'Weak-spot warrior', how: 'Score 70% or more in a weak-spot test' },
+  { id: 'mock1', icon: '📝', name: 'First mock exam', how: 'Finish a whole mock paper' },
+  { id: 'mock80', icon: '🏆', name: 'Mock exam star', how: 'Score 80% or more in a mock exam with several sections' }
+];
+const MEDALS = [{ k: 'bronze', icon: '🥉', name: 'Bronze' }, { k: 'silver', icon: '🥈', name: 'Silver' }, { k: 'gold', icon: '🥇', name: 'Gold' }];
+const medalNeed = (sid, k) => { const n = B(sid).topics.length; return k === 'bronze' ? 3 : k === 'silver' ? Math.ceil(n / 2) : n; };
+const topicStars = sid => Object.keys(st.badges).filter(b => b.startsWith('t:' + (sid ? sid + '/' : ''))).length;
+// Explorer ranks grow with stars.
+const RANKS = [[0, '🌱', 'Rookie Explorer'], [50, '🧭', 'Junior Explorer'], [150, '🥾', 'Trailblazer'], [400, '🗺️', 'Pathfinder'], [800, '⛵', 'Navigator'], [1500, '🏆', 'Champion'], [3000, '👑', 'Legend']];
+function rank() { let i = 0; while (i + 1 < RANKS.length && st.stars >= RANKS[i + 1][0]) i++; return { i, r: RANKS[i], next: RANKS[i + 1] }; }
+function badgeInfo(id) {
+  if (id.startsWith('t:')) { const [sid, tid] = id.slice(2).split('/'); const t = ready(sid) && topicOf(sid, tid); return { icon: '⭐', name: (t ? t.name : tid) + ' star', how: 'Score 8 or more out of 10 in the ' + (t ? t.name : tid) + ' quiz' }; }
+  if (id.startsWith('m:')) { const [, sid, k] = id.split(':'), m = MEDALS.find(x => x.k === k), s = subj(sid); return { icon: m.icon, name: `${s.name} ${m.name.toLowerCase()} medal`, how: `Earn ${medalNeed(sid, k)} topic stars in ${s.name}` }; }
+  if (id.startsWith('rank:')) { const r = RANKS[+id.slice(5)]; return { icon: r[1], name: 'New rank: ' + r[2], how: `Collect ${r[0]} stars` }; }
+  return BADGES.find(b => b.id === id) || { icon: '🏅', name: id, how: '' };
 }
+function badgeName(id) { return badgeInfo(id).name; }
+// Checks for awards that can come from any activity.
+function checkAwards() {
+  [3, 7, 14, 30].forEach(n => { if (st.streak >= n) award('streak' + n); });
+  [100, 500, 1000].forEach(n => { if (st.stars >= n) award('stars' + n); });
+  const ts = topicStars();
+  if (ts >= 5) award('topics5');
+  if (ts >= 20) award('topics20');
+  SUBJECTS.filter(s => ready(s.id)).forEach(s => MEDALS.forEach(m => { if (topicStars(s.id) >= medalNeed(s.id, m.k)) award(`m:${s.id}:${m.k}`); }));
+  if (Object.keys(st.lessons).length >= 10) award('lesson10');
+  const subs = new Set(Object.keys(st.q).map(id => QI[id] && QI[id].subject));
+  if (SUBJECTS.every(s => !ready(s.id) || subs.has(s.id))) award('allfour');
+  const r = rank().i;
+  if (r > (st.rank || 0)) { st.rank = r; awards.push('rank:' + r); }
+}
+
+// ---- sounds, confetti and the owl buddy (kept out of timed tests so they stay calm)
+let actx = null;
+const soundOn = () => st.settings.sound !== false;
+function sfx(kind) {
+  if (!soundOn()) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const notes = { right: [[660, 0], [880, 0.09], [1320, 0.18]], wrong: [[392, 0], [311, 0.14]], level: [[523, 0], [659, 0.1], [784, 0.2], [1047, 0.32]], win: [[523, 0], [659, 0.12], [784, 0.24], [1047, 0.36], [784, 0.5], [1047, 0.62]], tap: [[740, 0]] }[kind] || [];
+    const t0 = actx.currentTime;
+    notes.forEach(([f, d]) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = kind === 'wrong' ? 'triangle' : 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + d); g.gain.exponentialRampToValueAtTime(kind === 'tap' ? 0.06 : 0.16, t0 + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.25);
+      o.connect(g); g.connect(actx.destination); o.start(t0 + d); o.stop(t0 + d + 0.3);
+    });
+  } catch (e) { /* sound is optional */ }
+}
+const reduced = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+function confetti(n) {
+  if (reduced()) return;
+  const box = document.createElement('div'), cols = ['#ffb703', '#3b5bdb', '#2f9e44', '#e64980', '#15aabf', '#f76707', '#7950f2'];
+  box.className = 'confetti'; box.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < (n || 70); i++) {
+    const s = document.createElement('i');
+    s.style.left = Math.random() * 100 + 'vw'; s.style.background = pick(cols);
+    s.style.animationDelay = Math.random() * 0.5 + 's'; s.style.animationDuration = 1.8 + Math.random() * 1.6 + 's';
+    s.style.setProperty('--r', Math.round(Math.random() * 720 - 360) + 'deg'); s.style.setProperty('--x', Math.round(Math.random() * 160 - 80) + 'px');
+    if (i % 3 === 0) s.style.borderRadius = '50%';
+    box.appendChild(s);
+  }
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), 4200);
+}
+// Ollie the owl, an original mascot drawn in SVG.
+const OWL = `<svg viewBox="0 0 100 100" class="owl" aria-hidden="true">
+  <path d="M20 34 L27 10 L41 27 Z M80 34 L73 10 L59 27 Z" fill="#5f3dc4"/>
+  <ellipse cx="50" cy="58" rx="34" ry="38" fill="#7950f2"/>
+  <ellipse cx="50" cy="71" rx="20" ry="21" fill="#e5dbff"/>
+  <path d="M42 66 q4 3 8 0 q4 3 8 0 M40 75 q5 3 10 0 q5 3 10 0" stroke="#b197fc" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path class="wing" d="M17 58 Q8 76 24 88 Q21 72 28 62Z"/><path class="wing r" d="M83 58 Q92 76 76 88 Q79 72 72 62Z"/>
+  <circle cx="36" cy="44" r="13" fill="#fff"/><circle cx="64" cy="44" r="13" fill="#fff"/>
+  <g class="pupils"><circle cx="37" cy="45" r="6.5" fill="#1d2b3a"/><circle cx="63" cy="45" r="6.5" fill="#1d2b3a"/><circle cx="39.5" cy="42.5" r="2.2" fill="#fff"/><circle cx="65.5" cy="42.5" r="2.2" fill="#fff"/></g>
+  <path d="M45 54 L55 54 L50 62 Z" fill="#ffb703"/>
+  <circle cx="26" cy="56" r="4" fill="#f783ac" opacity=".55"/><circle cx="74" cy="56" r="4" fill="#f783ac" opacity=".55"/>
+  <path d="M40 95 l3 -5 l3 5 M54 95 l3 -5 l3 5" stroke="#ffb703" stroke-width="3" fill="none" stroke-linecap="round"/></svg>`;
+const buddy = (msg, mood) => `<div class="buddy ${mood || ''}">${OWL}<div class="bubble">${msg}</div></div>`;
+const FUN = [
+  '<b>Tip:</b> E, J, O, T and Y are letters 5, 10, 15, 20 and 25. Remember <b>EJOTY</b> to find letter positions fast!',
+  '<b>Did you know?</b> There are 11 different nets that fold into a cube.',
+  '<b>Tip:</b> In a test, never leave a blank. A sensible guess can still win a mark.',
+  '<b>Did you know?</b> 1/4, 0.25 and 25% are all exactly the same amount.',
+  '<b>Tip:</b> Read every question twice. Little words like NOT can change everything!',
+  '<b>Tip:</b> Stuck? Cross out the answers you know are wrong first.',
+  '<b>Did you know?</b> An octagon has 8 sides and a decagon has 10.',
+  '<b>Tip:</b> Check the units! Centimetres and metres are easy to mix up.',
+  '<b>Tip:</b> Reading a story every day is the best way to grow your word power.',
+  '<b>Did you know?</b> Every time you fix a mistake, your brain gets a little bit stronger.'
+];
+function celebrate(list) {
+  if (!list.length) return;
+  closePop();
+  const d = document.createElement('div');
+  d.className = 'modal'; d.id = 'pop'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.setAttribute('aria-label', 'New award');
+  const many = list.length > 1;
+  d.innerHTML = `<div class="card award-pop"><div class="award-icons">${list.slice(0, 4).map(id => `<span>${badgeInfo(id).icon}</span>`).join('')}</div>
+    <h2>${many ? 'Wow! ' + list.length + ' new awards!' : 'New award!'}</h2>
+    ${list.map(id => `<p class="aw"><b>${esc(badgeInfo(id).name)}</b><br><span class="muted small">${esc(badgeInfo(id).how)}</span></p>`).join('')}
+    <div class="row" style="justify-content:center;margin-top:1rem"><a class="btn" href="#trophies">🏆 See my trophy room</a>${list.some(id => !id.startsWith('rank:')) ? `<a class="btn alt" href="#cert/${encodeURIComponent(list.find(id => !id.startsWith('rank:')))}">📜 Certificate</a>` : ''}<button class="btn ghost" data-act="closepop">Close</button></div></div>`;
+  document.body.appendChild(d);
+  d.addEventListener('click', ev => { if (ev.target === d) closePop(); });
+  confetti(140); sfx('win');
+}
+// Numbers that count up when a page opens.
+function animateCounts() {
+  document.querySelectorAll('.count').forEach(el => {
+    const n = +el.dataset.n || 0;
+    if (reduced() || n < 2) { el.textContent = n; return; }
+    const t0 = performance.now(), dur = 700;
+    const step = now => { const p = Math.min(1, (now - t0) / dur); el.textContent = Math.round(n * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+let lastStars = null;
+function chips() {
+  const el = $('#chips'); if (!el) return;
+  const bump = lastStars !== null && st.stars > lastStars;
+  lastStars = st.stars;
+  const r = rank().r;
+  el.innerHTML = `<a class="chip" href="#trophies" title="${esc(r[2])}">${r[1]}</a><span class="chip" title="Day streak">🔥 ${st.streak}</span><span class="chip star ${bump ? 'bump' : ''}" title="Stars">⭐ ${st.stars}</span>
+    <button class="chip" data-act="sound" aria-label="${soundOn() ? 'Turn sound off' : 'Turn sound on'}">${soundOn() ? '🔊' : '🔇'}</button>`;
+}
+const starsOf = (sid, tid) => { const m = mastery(sid, tid); return m >= 0.85 ? 3 : m >= 0.6 ? 2 : m >= 0.3 ? 1 : 0; };
+const starRow = n => `<span class="tstars" aria-label="${n} of 3 stars">${'<i class="on">★</i>'.repeat(n)}${'<i>★</i>'.repeat(3 - n)}</span>`;
 
 // ---------------------------------------------------------------- sessions
 let S = null;       // the session in progress
@@ -378,6 +518,9 @@ function finish(redirect) {
   if (s.topic) st.last = { subject: s.subject, topic: s.topic };
   awards = [];
   const pct = score / items.length;
+  award('first');
+  const prev = e.label && st.history.find(h => h.id !== e.id && h.label === e.label && h.mode === e.mode);
+  if (prev && redirect && pct - prev.score / prev.total >= 0.2) award('comeback');
   if (s.mode === 'quiz' && items.length >= 8 && pct >= 0.8) award('t:' + tkey(s.subject, s.topic));
   if (s.mode === 'test' && pct >= 0.8) award('test80');
   if ((s.mode === 'test' || s.mode === 'mock') && redirect && pct === 1 && items.length >= 8) award('perfect');
@@ -386,15 +529,14 @@ function finish(redirect) {
   if (s.cfg && s.cfg.k === 'focus' && redirect && pct >= 0.7) award('focus1');
   if (s.mode === 'mock' && redirect && s.part + 1 === s.parts.length) award('mock1');
   if (s.mode === 'mock' && s.parts.length > 1 && s.part + 1 === s.parts.length && pct >= 0.8) award('mock80');
-  [3, 7, 14, 30].forEach(n => { if (st.streak >= n) award('streak' + n); });
-  [100, 500, 1000].forEach(n => { if (st.stars >= n) award('stars' + n); });
+  checkAwards();
   save();
   if (redirect) location.hash = '#history/' + e.id + '/done';
 }
 
 // ---------------------------------------------------------------- views
 const view = () => $('#view');
-function page(html) { view().innerHTML = html; }
+function page(html) { view().innerHTML = html; chips(); animateCounts(); }
 const bar = (v, cls) => `<div class="bar ${cls || ''}"><i style="width:${Math.round(v * 100)}%"></i></div>`;
 
 function plan() {
@@ -427,26 +569,34 @@ function vHome() {
   const first = B(p.sid).topics[0];
   const cont = last ? `<a class="btn big" href="#topic/${st.last.subject}/${st.last.topic}">Continue where you left off: ${esc(last.name)} →</a>`
     : `<a class="btn big" href="#lesson/${p.sid}/${first.id}">Start your first lesson: ${esc(first.name)} →</a>`;
-  const hour = new Date().getHours();
+  const hour = new Date().getHours(), nm = st.settings.name ? ', ' + esc(st.settings.name) : '';
+  const done = steps.filter(s => s.done).length, allDone = done === steps.length;
+  const rk = rank(), toNext = rk.next ? rk.next[0] - st.stars : 0;
+  const say = allDone ? `<b>You finished today's plan. Amazing!</b> Anything extra is a bonus. Maybe try a new test?`
+    : mins >= 20 ? `<b>${mins} minutes today. Super effort!</b> Time for a break and a snack.`
+    : !st.history.length ? `<b>Hello! I'm Ollie the owl.</b> I'll cheer you on. Let's start with your first lesson!`
+    : pick(FUN);
   page(`
-    <h1>${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}! Ready to explore?</h1>
+    <h1>${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}${nm}! Ready to explore?</h1>
     ${countdownHTML() ? `<p>${countdownHTML()}</p>` : ''}
-    <p class="muted">${mins >= 20 ? `You have practised for ${mins} minutes today. That is plenty. Time for a break!` : mins ? `You have practised for ${mins} minute${mins > 1 ? 's' : ''} today. Aim for 15 to 20.` : 'A little every day works best. Aim for 15 to 20 minutes.'}</p>
-    <div class="tiles">
-      <div class="tile"><b>🔥 ${st.streak}</b><span>day streak</span></div>
-      <div class="tile"><b>⭐ ${st.stars}</b><span>stars</span></div>
-      <div class="tile"><b>🏅 ${Object.keys(st.badges).length}</b><span>badges</span></div>
+    <div class="hero">${buddy(say, allDone ? 'happy' : '')}</div>
+    <div class="tiles four">
+      <a class="tile" href="#trophies"><b>${rk.r[1]}</b><span>${esc(rk.r[2])}${rk.next ? `<br><small>${toNext} ⭐ to ${esc(rk.next[2])}</small>` : ''}</span></a>
+      <div class="tile"><b><span class="flame">🔥</span> <span class="count" data-n="${st.streak}">${st.streak}</span></b><span>day streak</span></div>
+      <div class="tile"><b>⭐ <span class="count" data-n="${st.stars}">${st.stars}</span></b><span>stars</span></div>
+      <div class="tile"><div class="mini-ring" style="--p:${Math.round(Math.min(1, mins / 15) * 100)}"><span>${mins}</span></div><span>of 15 minutes today</span></div>
     </div>
     <div style="margin:1rem 0">${cont}</div>
     <div class="card">
-      <h2 style="margin-top:0">Today's plan</h2>
+      <div class="row spread"><h2 style="margin:0">Today's plan</h2><span class="pill ${allDone ? 'gold' : ''}">${allDone ? '🎉 All done!' : `${done} of ${steps.length} done`}</span></div>
       ${p.swapped ? `<p class="small muted">${esc(subj(p.swapped).name)} joins the app in the next stage, so today is ${esc(subj(p.sid).name)}.</p>` : ''}
       <ul class="plan">${steps.map(s => `<li><span class="tick ${s.done ? 'done' : ''}">${s.done ? '✓' : ''}</span><span class="grow">${esc(s.label)}</span>
         ${s.href ? `<a class="btn alt" href="${s.href}">${s.done ? 'Again' : 'Go'}</a>` : `<button class="btn alt" data-act="${s.act}" data-sid="${s.sid}" data-tid="${s.tid || ''}">${s.done ? 'Again' : 'Go'}</button>`}</li>`).join('')}</ul>
     </div>
     <div class="grid">
-      <a class="card subject" href="#tests"><span class="ico">🎲</span><span><h3>Take a new test</h3><span class="muted small">Every test is freshly picked. Try a weak-spot test!</span></span></a>
-      <a class="card subject" href="#tips"><span class="ico">💡</span><span><h3>Exam tips</h3><span class="muted small">Tricks that add marks in every paper.</span></span></a>
+      <a class="card subject" href="#tests" style="--c:#e8590c"><span class="ico">🎲</span><span><h3>Take a new test</h3><span class="muted small">Every test is freshly picked. Try a weak-spot test!</span></span></a>
+      <a class="card subject" href="#trophies" style="--c:#f08c00"><span class="ico">🏆</span><span><h3>Trophy room</h3><span class="muted small">${Object.keys(st.badges).length} awards so far. What's next?</span></span></a>
+      <a class="card subject" href="#tips" style="--c:#2f9e44"><span class="ico">💡</span><span><h3>Exam tips</h3><span class="muted small">Tricks that add marks in every paper.</span></span></a>
     </div>
     <div class="card">
       <h2 style="margin-top:0">This week</h2>
@@ -454,21 +604,66 @@ function vHome() {
     </div>`);
 }
 
+// ---- trophy room and certificates
+function vTrophies() {
+  const rk = rank(), earned = id => st.badges[id];
+  const card = (id, info) => { const e = earned(id); return `<div class="trophy ${e ? 'got' : 'locked'}"><span class="ti">${e ? info.icon : '🔒'}</span><b>${esc(info.name)}</b><span class="small muted">${e ? 'Earned ' + e.split('-').reverse().join('/') : esc(info.how)}</span>
+    ${e ? `<a class="small" href="#cert/${encodeURIComponent(id)}">📜 Certificate</a>` : ''}</div>`; };
+  const tstars = Object.keys(st.badges).filter(b => b.startsWith('t:'));
+  const got = BADGES.filter(b => earned(b.id)).length;
+  page(`<h1>🏆 Trophy room</h1><p class="muted">Every award here was earned by hard work. Keep exploring to fill every shelf!</p>
+    <div class="card rankcard"><span class="bigicon">${rk.r[1]}</span><div style="flex:1"><p class="small muted" style="margin:0">Your explorer rank</p><h2 style="margin:.1rem 0">${esc(rk.r[2])}</h2>
+      ${rk.next ? `${bar((st.stars - rk.r[0]) / (rk.next[0] - rk.r[0]), 'gold')}<p class="small">⭐ ${st.stars} stars · <b>${rk.next[0] - st.stars} more</b> to become ${rk.next[1]} ${esc(rk.next[2])}</p>` : '<p><b>The highest rank of all. Legendary!</b></p>'}
+      <div class="ranks">${RANKS.map((r, i) => `<span class="${i <= rk.i ? 'on' : ''}" title="${esc(r[2])}: ${r[0]} stars">${r[1]}</span>`).join('')}</div></div></div>
+    <h2>Subject medals</h2>
+    <div class="shelf">${SUBJECTS.filter(s => ready(s.id)).map(s => `<div class="card medalcard" style="--c:${s.c}"><h3>${s.icon} ${esc(s.name)}</h3><p class="small muted">${topicStars(s.id)} of ${B(s.id).topics.length} topic stars</p>
+      <div class="medals">${MEDALS.map(m => { const id = `m:${s.id}:${m.k}`; return `<a class="medal ${earned(id) ? 'got' : ''}" ${earned(id) ? `href="#cert/${encodeURIComponent(id)}"` : ''} title="${esc(badgeInfo(id).how)}"><span>${m.icon}</span><small>${earned(id) ? m.name : medalNeed(s.id, m.k) + ' ⭐'}</small></a>`; }).join('')}</div></div>`).join('')}</div>
+    <h2>Badges <span class="pill">${got} of ${BADGES.length}</span></h2>
+    <div class="trophies">${BADGES.map(b => card(b.id, b)).join('')}</div>
+    <h2>Topic stars <span class="pill">${tstars.length}</span></h2>
+    <p class="muted small">Score 8 or more out of 10 in a topic quiz to win its star.</p>
+    ${tstars.length ? `<div class="trophies">${tstars.map(id => card(id, badgeInfo(id))).join('')}</div>` : `<div class="card">${buddy('No topic stars yet. Pick a topic, read the lesson, then take its quiz. You can do it!')}</div>`}`);
+}
+function vCert(id) {
+  const info = badgeInfo(id), when = st.badges[id];
+  if (!when) return vTrophies();
+  const name = st.settings.name;
+  page(`<p class="noprint"><a href="#trophies">← Trophy room</a></p>
+    ${name ? '' : `<div class="card noprint"><label for="certname">Whose certificate is this?</label><input id="certname" class="inp" type="text" maxlength="20" data-change="name" placeholder="Type your first name"></div>`}
+    <div class="cert"><div class="cert-in">
+      <div class="cert-owl">${OWL}</div>
+      <p class="cert-k">Certificate of Achievement</p>
+      <p>This certificate is proudly presented to</p>
+      <p class="cert-name">${esc(name || 'a brilliant 11+ Explorer')}</p>
+      <p>for earning the award</p>
+      <p class="cert-award">${info.icon} ${esc(info.name)}</p>
+      <p class="muted">${esc(info.how)}</p>
+      <div class="cert-foot"><span>${new Date(when + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span><span><b>11+ Explorer</b></span></div>
+    </div></div>
+    <div class="row noprint" style="justify-content:center;margin-top:1rem"><button class="btn" data-act="print">🖨 Print certificate</button></div>`);
+  if (!reduced()) confetti(50);
+}
+
 function vLearn() {
-  page(`<h1>Learn</h1><p class="muted">Pick a subject. Each topic has a short lesson, an exercise and a quiz.</p>` +
-    SUBJECTS.map(s => ready(s.id)
-      ? `<a class="card subject" href="#learn/${s.id}"><span class="ico">${s.icon}</span><span style="flex:1"><h3>${esc(s.name)}</h3><span class="muted small">${B(s.id).topics.length} topics · ${B(s.id).questions.length} questions</span>${bar(subjectMastery(s.id), 'g')}</span></a>`
-      : `<div class="card subject locked"><span class="ico">${s.icon}</span><span><h3>${esc(s.name)}</h3><span class="muted small">Coming in the next stage</span></span></div>`).join(''));
+  page(`<h1>Learn</h1><p class="muted">Pick a subject. Each topic has a short lesson, an exercise and a quiz. Fill up the stars as you master each one!</p><div class="subjects">` +
+    SUBJECTS.map(s => {
+      if (!ready(s.id)) return `<div class="card subject locked" style="--c:${s.c}"><span class="ico">${s.icon}</span><span><h3>${esc(s.name)}</h3><span class="muted small">Coming soon</span></span></div>`;
+      const tops = B(s.id).topics, got = tops.reduce((a, t) => a + starsOf(s.id, t.id), 0), medal = [...MEDALS].reverse().find(m => st.badges[`m:${s.id}:${m.k}`]);
+      return `<a class="card subject" href="#learn/${s.id}" style="--c:${s.c}"><span class="ico">${s.icon}</span><span style="flex:1"><h3>${esc(s.name)} ${medal ? medal.icon : ''}</h3>
+        <span class="muted small">${tops.length} topics · ⭐ ${got} of ${tops.length * 3} stars</span>${bar(got / (tops.length * 3), 'c')}</span><span class="go">→</span></a>`;
+    }).join('') + '</div>');
 }
 
 function vSubject(sid) {
   if (!ready(sid)) return vLearn();
-  page(`<p><a href="#learn">← Subjects</a></p><h1>${esc(B(sid).name)}</h1><p class="muted">Topics run from easier to harder. Work down the list.</p>` +
+  const s0 = subj(sid);
+  page(`<div style="--c:${s0.c}"><p><a href="#learn">← Subjects</a></p><h1>${s0.icon} ${esc(B(sid).name)}</h1><p class="muted">Topics run from easier to harder. Work down the path and collect three stars on each one.</p>
+    <div class="path">` +
     B(sid).topics.map((t, i) => {
-      const s = peek(sid, t.id), star = st.badges['t:' + tkey(sid, t.id)];
-      return `<a class="card topic" href="#topic/${sid}/${t.id}"><span class="num">${i + 1}</span><span><b>${esc(t.name)}</b>${bar(mastery(sid, t.id), 'g')}</span>
-        <span class="side">${star ? '<span class="pill gold">🏅 Star</span> ' : ''}<span class="pill ${s ? '' : 'grey'}">${s ? LEVEL[s.level] : 'New'}</span></span></a>`;
-    }).join(''));
+      const s = peek(sid, t.id), star = st.badges['t:' + tkey(sid, t.id)], n = starsOf(sid, t.id);
+      return `<a class="card topic ${n === 3 ? 'done' : ''}" href="#topic/${sid}/${t.id}"><span class="num">${n === 3 ? '✓' : i + 1}</span><span><b>${esc(t.name)}</b> ${starRow(n)}${bar(mastery(sid, t.id), 'c')}</span>
+        <span class="side">${star ? '<span class="pill gold">🏅 Quiz star</span> ' : ''}<span class="pill ${s ? '' : 'grey'}">${s ? LEVEL[s.level] : 'New'}</span></span></a>`;
+    }).join('') + '</div></div>');
 }
 
 function vTopic(sid, tid) {
@@ -487,7 +682,9 @@ function vTopic(sid, tid) {
 function vLesson(sid, tid) {
   const t = ready(sid) && topicOf(sid, tid);
   if (!t) return vLearn();
-  st.lessons[tkey(sid, tid)] = today(); st.last = { subject: sid, topic: tid }; save();
+  st.lessons[tkey(sid, tid)] = today(); st.last = { subject: sid, topic: tid };
+  awards = []; checkAwards(); save();
+  if (awards.length) setTimeout(() => celebrate(awards), 300);
   page(`<p><a href="#topic/${sid}/${tid}">← ${esc(t.name)}</a></p><h1>${esc(t.name)}</h1>
     ${canSpeak() ? '<p><button class="btn ghost" data-act="speak" data-sel="#view .lesson">🔊 Read this lesson to me</button></p>' : ''}
     <div class="card lesson">${lessonBody(t)}</div>
@@ -548,7 +745,7 @@ function renderBetween() {
   view().classList.remove('wide');
   page(`<div class="card" style="text-align:center;padding:2rem 1.2rem">
     <p class="pill">${esc(S.label || MODE[S.mode])}</p>
-    <h1 style="margin-top:.8rem">${esc(done.name)} section finished</h1>
+    <div style="display:flex;justify-content:center;margin-top:.8rem">${buddy(`<b>${esc(done.name)} section finished!</b> Great focus. Take a breath.`, 'happy')}</div>
     <p class="muted">You answered ${got} of ${done.to - done.from} questions. The clock is stopped.</p>
     ${next.rest ? '<div class="box eg"><b>Half-way break.</b> In the real test there is a break here. Have a drink, stretch, and come back when you are ready.</div>' : '<p>Take a few deep breaths before the next section.</p>'}
     <h2>Next: ${esc(next.name)}</h2><p class="muted">${next.to - next.from} questions · ${next.mins} minutes</p>
@@ -583,7 +780,7 @@ function renderSession() {
     : `<p style="margin-top:1rem" class="row"><button class="btn ghost" data-act="hint">💡 Show a hint</button><button class="btn ghost" data-act="lessonpop" data-sid="${q.subject}" data-tid="${q.topic}">📖 Show me the lesson</button></p>`;
   if (fb && it.chosen !== null) {
     const ok = it.chosen === q.a, last = num >= total;
-    h += `<div class="fb ${ok ? 'ok' : 'try'}" id="fbbox"><h3>${ok ? esc(it.say) + ' ⭐' : esc(it.say)}</h3>
+    h += `<div class="fb ${ok ? 'ok' : 'try'}" id="fbbox"><div class="fbhead ${ok ? 'happy' : ''}">${OWL}<h3>${ok ? esc(it.say) + ' <span class="plus">+1 ⭐</span>' : esc(it.say)}</h3></div>
       ${ok ? '' : `<p>You chose <b>${showOpt(q, it.chosen)}</b>. The answer is <b>${showOpt(q, q.a)}</b>.</p>`}
       <p><b>${ok ? 'The method:' : 'Here is how to work it out, step by step:'}</b></p><ol class="steps">${q.steps.map(s => `<li>${rich(s)}</li>`).join('')}</ol>
       ${!ok && t.lesson && t.lesson.watch ? `<div class="box watch"><b>Tip for ${esc(t.name.toLowerCase())}:</b> ${rich(t.lesson.watch)}</div>` : ''}
@@ -656,13 +853,13 @@ function vResult(id, done) {
   const multi = new Set(br.map(r => r.sid)).size > 1;
   const weakHere = br.filter(r => r.ok / r.n < 0.7).slice(0, 3);
   page(`${done ? '' : '<p><a href="#history">← History</a></p>'}
-    <h1>${done ? esc(msg) : esc(e.label || MODE[e.mode]) + (t ? ': ' + esc(t.name) : '')}</h1>
+    ${done ? `<div class="hero">${buddy(`<h1 style="margin:0;font-size:1.35rem">${esc(msg)}</h1>`, pct >= 70 ? 'happy' : '')}</div>` : `<h1>${esc(e.label || MODE[e.mode]) + (t ? ': ' + esc(t.name) : '')}</h1>`}
     <div class="card score"><div class="ring" style="--p:${pct}"><span${e.total > 99 ? ' style="font-size:1.15rem"' : ''}>${e.score}/${e.total}</span></div>
       <div><p><b>${esc(e.label || MODE[e.mode])}</b>${e.label ? '' : ' · ' + esc(sname(e))}${t ? ' · ' + esc(t.name) : ''} · <b>${pct}%</b></p>
       <p class="muted">${fmtWhen(e.ts)} · Time taken: ${fmtSecs(e.secs)}${e.stars ? ' · ⭐ ' + e.stars + ' earned' : ''}</p>
       ${prev ? `<p>${pct > prevPct ? `<b class="up">▲ Up from ${prevPct}% last time.</b> Your hard work is paying off!` : pct === prevPct ? `Same as last time (${prevPct}%).` : `Last time you scored ${prevPct}%. Fix the mistakes below and you will bounce back.`}</p>` : ''}
       ${target && e.secs >= 30 ? `<p class="small">About ${perQ} s per question. ${perQ <= target ? 'Good pace for the real exam.' : `In the exam aim for about ${target} s, so keep practising timed tests.`}</p>` : ''}
-      ${done && awards.length ? `<div class="badges">${awards.map(a => `<span class="badge">🏅 New badge: ${esc(badgeName(a))}</span>`).join('')}</div>` : ''}
+      ${done && awards.length ? `<div class="badges">${awards.map(a => `<a class="badge" href="#trophies">${badgeInfo(a).icon} New: ${esc(badgeName(a))}</a>`).join('')}</div>` : ''}
       ${done && mins >= 20 ? `<p><b>${mins} minutes today.</b> Super session. Time for a break!</p>` : ''}</div></div>
     ${actions.length ? `<div class="row">${actions.join('')}</div>` : ''}
     ${e.cfg ? '<p class="small muted">A new test has different questions, picked at random, avoiding ones from your recent tests.</p>' : ''}
@@ -673,6 +870,10 @@ function vResult(id, done) {
     <h2>Look back at each question</h2>
     ${[...new Set(e.items.map(x => QI[x.id] && QI[x.id].p).filter(Boolean))].map(pid => passageHTML(e.items.map(x => QI[x.id]).find(q => q && q.p === pid), false).replace(/class="gap cur"/g, 'class="gap"')).join('')}
     ${reviewList(e.items)}`);
+  if (done) {
+    if (awards.length) { const list = awards.slice(); awards = []; setTimeout(() => celebrate(list), 500); }
+    else if (pct >= 70) { confetti(pct >= 90 ? 120 : 60); sfx('win'); }
+  }
 }
 
 function vHistory() {
@@ -729,7 +930,7 @@ function vProgress() {
     <div class="card"><h3>Score trend</h3>${trendSVG(st.history.slice(0, 20).reverse())}</div>
     ${SUBJECTS.filter(s => ready(s.id)).map(s => `<div class="card"><div class="row spread"><h3>${s.icon} ${esc(s.name)}</h3><span class="pill">${Math.round(subjectMastery(s.id) * 100)}% mastered</span></div>${bar(subjectMastery(s.id), 'g')}
       <div style="margin-top:1rem">${B(s.id).topics.map(t => { const p = peek(s.id, t.id); return `<div style="margin:.55rem 0"><div class="row spread small"><a href="#topic/${s.id}/${t.id}">${esc(t.name)}</a><span class="muted">${p ? `${p.correct}/${p.seen} · ${LEVEL[p.level]}` : 'Not started'}</span></div>${bar(mastery(s.id, t.id))}</div>`; }).join('')}</div></div>`).join('')}
-    <div class="card"><h3>Badges</h3><div class="badges">${ids.length ? ids.map(b => `<span class="badge">🏅 ${esc(badgeName(b))}</span>`).join('') : '<span class="badge off">Score 8 out of 10 in a topic quiz to earn your first badge</span>'}</div></div>`);
+    <div class="card"><div class="row spread"><h3>Badges</h3><a class="btn alt" href="#trophies">🏆 Trophy room</a></div><div class="badges">${ids.length ? ids.map(b => `<span class="badge">${badgeInfo(b).icon} ${esc(badgeName(b))}</span>`).join('') : '<span class="badge off">Score 8 out of 10 in a topic quiz to earn your first badge</span>'}</div></div>`);
 }
 
 // ---------------------------------------------------------------- exam readiness, countdown, parent view, tips
@@ -813,7 +1014,7 @@ function vParent(note) {
       <p class="small">Not started yet: ${untouched.map(u => `${esc(u.s.name)} ${u.n} of ${u.all}`).join(' · ')}. Revision queue: ${Object.keys(st.review).filter(id => QI[id]).length} questions.</p></div>
     <div class="card"><h3>Timed test scores</h3>${trendSVG(timed.slice(0, 15).reverse())}
       ${timed.length ? `<div class="tablewrap"><table><thead><tr><th>When</th><th>Paper</th><th class="num">Score</th><th class="num">Time</th><th></th></tr></thead><tbody>${timed.slice(0, 10).map(e => `<tr><td>${fmtWhen(e.ts)}</td><td>${esc(e.label || MODE[e.mode])}</td><td class="num">${e.score}/${e.total} (${Math.round(100 * e.score / e.total)}%)</td><td class="num">${fmtSecs(e.secs)}</td><td class="noprint"><a href="#history/${e.id}">Review</a></td></tr>`).join('')}</tbody></table></div>` : ''}</div>
-    <div class="card"><h3>Badges</h3><div class="badges">${Object.keys(st.badges).map(b => `<span class="badge">🏅 ${esc(badgeName(b))}</span>`).join('') || '<span class="badge off">None yet</span>'}</div></div>`);
+    <div class="card"><h3>Badges</h3><div class="badges">${Object.keys(st.badges).map(b => `<span class="badge">${badgeInfo(b).icon} ${esc(badgeName(b))}</span>`).join('') || '<span class="badge off">None yet</span>'}</div></div>`);
 }
 
 const TIPS = [
@@ -871,6 +1072,9 @@ function vSettings(note) {
     <div class="card"><label for="board">Target exam</label>
       <select id="board" data-change="board">${Object.keys(BOARDS).map(k => `<option value="${k}" ${k === st.settings.board ? 'selected' : ''}>${esc(BOARDS[k].name)}</option>`).join('')}</select>
       <p class="muted small">${esc(BOARDS[st.settings.board].note)}</p></div>
+    <div class="card"><label for="kidname">Your first name</label>
+      <input id="kidname" class="inp" type="text" maxlength="20" autocomplete="off" value="${esc(st.settings.name || '')}" data-change="name" placeholder="For greetings and certificates">
+      <label class="check"><input type="checkbox" data-change="sound" ${soundOn() ? 'checked' : ''}> Play sounds for right answers and awards</label></div>
     <div class="card"><label for="examdate">Exam date</label>
       <input id="examdate" class="inp" type="date" value="${esc(st.settings.examDate || '')}" data-change="examdate">
       <p class="muted small">Shows a countdown and adjusts the parent plan. The Kent Test is usually taken in early September at the start of Year 6. Check your council's website for the exact date.</p></div>
@@ -897,6 +1101,7 @@ const ACT = {
   lessonpop: d => lessonPop(d.sid, d.tid),
   closepop: () => closePop(),
   print: () => window.print(),
+  sound: () => { st.settings.sound = !soundOn(); save(); chips(); if (soundOn()) sfx('right'); },
   lock: () => { parentOK = false; vParent(); },
   clearpin: () => { delete st.settings.pin; parentOK = false; save(); vSettings('Parent PIN removed.'); },
   revision: () => startRevision(),
@@ -907,7 +1112,7 @@ const ACT = {
     if (!S) return;
     const it = S.items[S.idx], i = +d.i;
     if (S.between) return;
-    if (S.parts) { it.chosen = i; S.confirm = false; return renderSession(); }
+    if (S.parts) { it.chosen = i; S.confirm = false; sfx('tap'); return renderSession(); }
     if (it.chosen !== null) return;
     it.chosen = i;
     const ok = i === it.q.a;
@@ -915,6 +1120,9 @@ const ACT = {
     if (ok) S.stars++;
     S.msg = record(it.q, ok, S.mode);
     save(); renderSession();
+    sfx(ok ? 'right' : 'wrong');
+    if (S.msg === 'up') { setTimeout(() => sfx('level'), 350); confetti(50); }
+    else if (ok) { let k = 0; for (let j = S.idx; j >= 0 && S.items[j].chosen === S.items[j].q.a; j--) k++; if (k && k % 5 === 0) { confetti(40); toast(`🔥 ${k} in a row! You are on fire!`); } }
   },
   next: () => {
     if (!S || S.between) return;
@@ -970,6 +1178,8 @@ const SUBMIT = {
 };
 document.addEventListener('submit', e => { const f = e.target.closest('[data-submit]'); if (f && SUBMIT[f.dataset.submit]) { e.preventDefault(); SUBMIT[f.dataset.submit](); } });
 const CHANGE = {
+  name: el => { st.settings.name = el.value.trim().slice(0, 20) || null; save(); if (location.hash.startsWith('#cert')) route(); else vSettings('Name saved.'); },
+  sound: el => { st.settings.sound = el.checked; save(); chips(); },
   examdate: el => { st.settings.examDate = el.value || null; save(); vSettings(el.value ? 'Exam date saved.' : 'Exam date cleared.'); },
   board: el => { st.settings.board = el.value; save(); vSettings('Exam setting saved.'); },
   import: el => {
@@ -1004,7 +1214,7 @@ function route() {
   if (h[0] !== 'parent' && h[0] !== 'history') parentOK = false;
   closePop(); if (canSpeak()) speechSynthesis.cancel();
   if (h[0] !== 'session') view().classList.remove('wide');
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === ({ topic: 'learn', lesson: 'learn', session: '', tips: 'tests' }[h[0]] ?? h[0])));
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === ({ topic: 'learn', lesson: 'learn', session: '', tips: 'tests', cert: 'trophies' }[h[0]] ?? h[0])));
   if (!firstReady()) return page('<div class="card"><h1>No questions found</h1><p>The course data files did not load. Check that the data folder is next to index.html.</p></div>');
   switch (h[0]) {
     case 'learn': h[1] ? vSubject(h[1]) : vLearn(); break;
@@ -1018,6 +1228,8 @@ function route() {
     case 'settings': vSettings(); break;
     case 'parent': vParent(); break;
     case 'tips': vTips(); break;
+    case 'trophies': vTrophies(); break;
+    case 'cert': vCert(decodeURIComponent(h.slice(1).join('/'))); break;
     default: vHome();
   }
   window.scrollTo(0, 0);
