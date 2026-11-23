@@ -321,9 +321,45 @@ let timer = null;
 function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
 
 function begin(mode, sid, tid, questions, extra) {
+  if (S) finish(false);   // a different activity was left unfinished: keep what was answered, then start the new one
   S = Object.assign({ mode, subject: sid, topic: tid || null, items: questions.map(q => ({ q: prep(q), chosen: null })), idx: 0, start: Date.now(), hint: false, msg: null, stars: 0, used: new Set(questions.map(q => q.id)), flags: new Set(), qIdx: null }, extra || {});
   if (S.parts) startPart(0);
   if (location.hash === '#session') renderSession(); else location.hash = '#session';
+}
+// ---- keeping the place: the activity in progress is saved, so leaving the page or closing the app never loses it
+function persist() {
+  if (!S) { if (st.active) { delete st.active; save(); } return; }
+  const keep = ['mode', 'subject', 'topic', 'idx', 'start', 'stars', 'target', 'pid', 'parts', 'part', 'partStart', 'deadline', 'elapsed', 'between', 'label', 'cfg', 'tags', 'from', 'warned'];
+  const a = {}; keep.forEach(k => { if (S[k] !== undefined) a[k] = S[k]; });
+  a.flags = [...S.flags];
+  a.items = S.items.map(i => ({ id: i.q.id, perm: i.q.perm || null, c: i.chosen, s: i.secs || 0, say: i.say || null }));
+  st.active = a; save();
+}
+function restore() {
+  const a = st.active; if (!a) return;
+  try {
+    const items = a.items.map(x => {
+      const q = QI[x.id]; if (!q) throw new Error('missing question');
+      const qq = x.perm ? Object.assign({}, q, { opts: x.perm.map(i => q.opts[i]), a: x.perm.indexOf(q.a), perm: x.perm }) : q;
+      return { q: qq, chosen: x.c, secs: x.s, say: x.say };
+    });
+    S = Object.assign({}, a, { items, used: new Set(items.map(i => i.q.id)), flags: new Set(a.flags || []), hint: false, msg: null, qIdx: null, confirm: false });
+  } catch (e) { delete st.active; S = null; save(); }
+}
+// Where the child is in the activity, for the Continue buttons.
+function sessionWhere() {
+  if (!S) return null;
+  const part = S.parts && S.parts[S.part], lo = part ? part.from : 0, hi = part ? part.to : S.items.length;
+  const total = S.mode === 'exercise' ? S.target : hi - lo;
+  const name = S.label || (S.topic && topicOf(S.subject, S.topic) ? topicOf(S.subject, S.topic).name : MODE[S.mode]);
+  const left = S.parts && !S.between ? Math.max(0, Math.ceil((S.deadline - Date.now()) / 60000)) : null;
+  return { name, num: Math.min(total, S.idx - lo + 1), total, left };
+}
+function resumeBar() {
+  if (!S || location.hash === '#session') return '';
+  const w = sessionWhere();
+  return `<div class="card resume"><div><b>▶ Carry on where you stopped</b><br><span class="small">${esc(MODE[S.mode])}: ${esc(w.name)} · question ${w.num} of ${w.total}${w.left !== null ? ` · ${w.left} min left on the clock (it keeps running)` : ''}</span></div>
+    <div class="row"><a class="btn" href="#session">Continue →</a><button class="btn ghost" data-act="endsession">Finish now</button></div></div>`;
 }
 // Time spent on each question, so the results can show where the minutes went.
 function stamp() {
@@ -506,14 +542,14 @@ function tick() {
 function finish(redirect) {
   stopTimer(); stamp();
   if (!S) return;
-  const s = S; S = null;
+  const s = S; S = null; delete st.active;
   const isTimed = !!s.parts;
   if (isTimed && !redirect && !s.between) s.elapsed = (s.elapsed || 0) + Math.min(s.parts[s.part].mins * 60, Math.round((Date.now() - s.partStart) / 1000));
   // a timed paper counts blanks as not yet right; anything else only counts what was answered
   // (if he leaves a timed paper part-way, only the questions he answered are kept)
   let items = isTimed && redirect ? s.items.slice(0, s.parts[s.part].to) : s.items.filter(i => i.chosen !== null);
   if (isTimed && !items.some(i => i.chosen !== null)) items = [];
-  if (!items.length) { if (redirect) location.hash = '#home'; return; }
+  if (!items.length) { save(); if (redirect) location.hash = '#home'; return; }
   if (isTimed) items.forEach(i => { if (i.chosen === i.q.a) s.stars++; record(i.q, i.chosen === i.q.a, 'test'); });
   const score = items.filter(i => i.chosen === i.q.a).length;
   const secs = isTimed ? (s.elapsed || 0) : Math.min(3600, Math.round((Date.now() - s.start) / 1000));
@@ -548,8 +584,10 @@ function finish(redirect) {
 
 // ---------------------------------------------------------------- views
 const view = () => $('#view');
-function page(html) { view().innerHTML = html; chips(); animateCounts(); }
+function page(html) { view().innerHTML = resumeBar() + html; chips(); animateCounts(); }
 const bar = (v, cls) => `<div class="bar ${cls || ''}"><i style="width:${Math.round(v * 100)}%"></i></div>`;
+// A section that opens and closes. It remembers whether it was left open or closed.
+const fold = (id, title, body, open, cls) => { const f = (st.settings.folds || {})[id], isOpen = f === undefined ? open : f; return `<details class="fold ${cls || ''}" data-fold="${id}" ${isOpen ? 'open' : ''}><summary>${title}</summary><div class="fold-body">${body}</div></details>`; };
 
 function plan() {
   if (!st.plan || st.plan.day !== today() || !ready(st.plan.sid) || !topicOf(st.plan.sid, st.plan.tid)) {
@@ -634,14 +672,13 @@ function vTrophies() {
     <div class="card rankcard"><span class="bigicon">${rk.r[1]}</span><div style="flex:1"><p class="small muted" style="margin:0">Your explorer rank</p><h2 style="margin:.1rem 0">${esc(rk.r[2])}</h2>
       ${rk.next ? `${bar((st.stars - rk.r[0]) / (rk.next[0] - rk.r[0]), 'gold')}<p class="small">⭐ ${st.stars} stars · <b>${rk.next[0] - st.stars} more</b> to become ${rk.next[1]} ${esc(rk.next[2])}</p>` : '<p><b>The highest rank of all. Legendary!</b></p>'}
       <div class="ranks">${RANKS.map((r, i) => `<span class="${i <= rk.i ? 'on' : ''}" title="${esc(r[2])}: ${r[0]} stars">${r[1]}</span>`).join('')}</div></div></div>
-    <h2>Subject medals</h2>
-    <div class="shelf">${SUBJECTS.filter(s => ready(s.id)).map(s => `<div class="card medalcard" style="--c:${s.c}"><h3>${s.icon} ${esc(s.name)}</h3><p class="small muted">${topicStars(s.id)} of ${B(s.id).topics.length} topic stars</p>
-      <div class="medals">${MEDALS.map(m => { const id = `m:${s.id}:${m.k}`; return `<a class="medal ${earned(id) ? 'got' : ''}" ${earned(id) ? `href="#cert/${encodeURIComponent(id)}"` : ''} title="${esc(badgeInfo(id).how)}"><span>${m.icon}</span><small>${earned(id) ? m.name : medalNeed(s.id, m.k) + ' ⭐'}</small></a>`; }).join('')}</div></div>`).join('')}</div>
-    <h2>Badges <span class="pill">${got} of ${BADGES.length}</span></h2>
-    <div class="trophies">${BADGES.map(b => card(b.id, b)).join('')}</div>
+    ${fold('tr-medals', '<span class="ft">🥇 Subject medals</span>', `<div class="shelf">${SUBJECTS.filter(s => ready(s.id)).map(s => `<div class="card medalcard" style="--c:${s.c}"><h3>${s.icon} ${esc(s.name)}</h3><p class="small muted">${topicStars(s.id)} of ${B(s.id).topics.length} topic stars</p>
+      <div class="medals">${MEDALS.map(m => { const id = `m:${s.id}:${m.k}`; return `<a class="medal ${earned(id) ? 'got' : ''}" ${earned(id) ? `href="#cert/${encodeURIComponent(id)}"` : ''} title="${esc(badgeInfo(id).how)}"><span>${m.icon}</span><small>${earned(id) ? m.name : medalNeed(s.id, m.k) + ' ⭐'}</small></a>`; }).join('')}</div></div>`).join('')}</div>`, true)}
+    ${fold('tr-badges', `<span class="ft">🏅 Badges</span><span class="pill">${got} of ${BADGES.length}</span>`, `<div class="trophies">${BADGES.map(b => card(b.id, b)).join('')}</div>`, true)}
     <h2>Topic stars <span class="pill">${tstars.length}</span></h2>
-    <p class="muted small">Score 8 or more out of 10 in a topic quiz to win its star.</p>
-    ${tstars.length ? `<div class="trophies">${tstars.map(id => card(id, badgeInfo(id))).join('')}</div>` : `<div class="card">${buddy('No topic stars yet. Pick a topic, read the lesson, then take its quiz. You can do it!')}</div>`}`);
+    <p class="muted small">Score 8 or more out of 10 in a topic quiz to win its star. Tap a subject to see its stars.</p>
+    ${SUBJECTS.filter(s => ready(s.id)).map(s => { const mine = tstars.filter(id => id.startsWith('t:' + s.id + '/')); return fold('tr-ts-' + s.id, `<span class="ft" style="--c:${s.c}">${s.icon} ${esc(s.name)}</span><span class="pill">${mine.length} of ${B(s.id).topics.length}</span>`,
+      mine.length ? `<div class="trophies">${mine.map(id => card(id, badgeInfo(id))).join('')}</div>` : buddy(`No ${esc(s.name)} stars yet. Pick a topic, read the lesson, then take its quiz. You can do it!`), false, 'card'); }).join('')}`);
 }
 function vCert(id) {
   const info = badgeInfo(id), when = st.badges[id];
@@ -688,13 +725,14 @@ function vSubject(sid) {
 function vTopic(sid, tid) {
   const t = ready(sid) && topicOf(sid, tid);
   if (!t) return vLearn();
+  const here = mode => S && S.mode === mode && S.subject === sid && S.topic === tid;
   const s = peek(sid, tid);
   page(`<p><a href="#learn/${sid}">← ${esc(B(sid).name)}</a></p><h1>${esc(t.name)}</h1>
     <p class="muted">${s ? `${s.correct} right out of ${s.seen} so far · Level: ${LEVEL[s.level]}` : 'New topic. Start with the lesson.'}</p>${bar(mastery(sid, tid), 'g')}
     <div class="grid" style="margin-top:1rem">
       <div class="card"><h3>1. Lesson</h3><p class="muted small">${t.extra ? 'Planning tips, writing prompts and a checklist.' : 'A short explanation with a worked example.'}</p><a class="btn alt" href="#lesson/${sid}/${tid}">Read the lesson</a></div>
-      <div class="card"><h3>2. Exercise</h3><p class="muted small">No timer. Hints and full explanations.</p><button class="btn" data-act="exercise" data-sid="${sid}" data-tid="${tid}">Start practising</button></div>
-      <div class="card"><h3>3. Quiz</h3><p class="muted small">10 questions. Score 8 or more to earn the topic star.</p><button class="btn alt" data-act="quiz" data-sid="${sid}" data-tid="${tid}">Take the quiz</button></div>
+      <div class="card"><h3>2. Exercise</h3><p class="muted small">No timer. Hints and full explanations.</p>${here('exercise') ? `<button class="btn" data-act="exercise" data-sid="${sid}" data-tid="${tid}">Continue: question ${sessionWhere().num} of ${sessionWhere().total} →</button><button class="btn ghost" style="margin-top:.5rem" data-act="restartex" data-sid="${sid}" data-tid="${tid}">Start a new set</button>` : `<button class="btn" data-act="exercise" data-sid="${sid}" data-tid="${tid}">Start practising</button>`}</div>
+      <div class="card"><h3>3. Quiz</h3><p class="muted small">10 questions. Score 8 or more to earn the topic star.</p><button class="btn alt" data-act="quiz" data-sid="${sid}" data-tid="${tid}">${here('quiz') ? `Continue quiz: question ${sessionWhere().num} of ${sessionWhere().total} →` : 'Take the quiz'}</button></div>
     </div>`);
 }
 
@@ -726,15 +764,12 @@ function vTests() {
   const tried = weak.filter(w => w.seen >= 3).length;
   page(`<h1>Tests</h1><p class="muted">Exam setting: ${esc(b.name)}. No hints in a test. Answers and methods are shown at the end.</p>
     <div class="box eg small">🎲 <b>Every test is new.</b> Questions are picked at random and answers are shuffled, and questions from your recent tests are kept out. When you finish you can generate another one straight away. <a href="#tips">Read the exam tips →</a></div>
-    <h2>🎯 Weak-spot test</h2>` +
-    (weak.length ? card('🎯 My weak spots', `${count} questions on ${tried ? 'the topics you find hardest right now' : 'four topics to get you started'}: ${weak.map(w => esc(w.name)).join(', ')}.`, 'focus', 'data-scope="all"', 'Start') : '') +
-    `<h2>10-minute tests: one subject</h2>` +
-    SUBJECTS.filter(s => ready(s.id)).map(s => card(`${s.icon} ${esc(s.name)}`, `${count} questions from across the subject.`, 'test', `data-sid="${s.id}"`, 'Start')).join('') +
-    `<h2>10-minute tests: mixed</h2>` +
-    Object.keys(MIXES).filter(k => MIXES[k].sids.filter(ready).length > 1).map(k => card(`🔀 ${esc(MIXES[k].name)}`, `${count} questions, shared between the subjects.`, 'mix', `data-kind="${k}"`, 'Start')).join('') +
-    `<h2>Mock exams</h2><p class="muted small">Full-length papers laid out like the real test. Each section has its own clock, and you cannot go back to a section once it is finished. Find a quiet table before you start.</p>` +
-    ['english', 'maths', 'reasoning'].filter(mockReady).map(k => card(`📝 ${esc(MOCKS[k].name)}`, info(k) + (k === 'reasoning' ? ' · three sections: verbal, non-verbal and spatial' : ''), 'mock', `data-kind="${k}"`, 'Start paper')).join('') +
-    (mockReady('full') ? card('🏁 Complete mock exam', `${info('full')} · English, Maths, then the three Reasoning sections, with a break in the middle. Allow about two hours.`, 'mock', 'data-kind="full"', 'Start mock') : '') +
+    ` + fold('t-weak', '<span class="ft">🎯 Weak-spot test</span>', weak.length ? card('🎯 My weak spots', `${count} questions on ${tried ? 'the topics you find hardest right now' : 'four topics to get you started'}: ${weak.map(w => esc(w.name)).join(', ')}.`, 'focus', 'data-scope="all"', 'Start') : '', true) +
+    fold('t-one', '<span class="ft">⏱️ 10-minute tests: one subject</span>', SUBJECTS.filter(s => ready(s.id)).map(s => card(`${s.icon} ${esc(s.name)}`, `${count} questions from across the subject.`, 'test', `data-sid="${s.id}"`, 'Start')).join(''), true) +
+    fold('t-mix', '<span class="ft">🔀 10-minute tests: mixed</span>', Object.keys(MIXES).filter(k => MIXES[k].sids.filter(ready).length > 1).map(k => card(`🔀 ${esc(MIXES[k].name)}`, `${count} questions, shared between the subjects.`, 'mix', `data-kind="${k}"`, 'Start')).join(''), false) +
+    fold('t-mock', '<span class="ft">📝 Mock exams</span>', `<p class="muted small">Full-length papers laid out like the real test. Each section has its own clock, and you cannot go back to a section once it is finished. Find a quiet table before you start.</p>` +
+      ['english', 'maths', 'reasoning'].filter(mockReady).map(k => card(`📝 ${esc(MOCKS[k].name)}`, info(k) + (k === 'reasoning' ? ' · three sections: verbal, non-verbal and spatial' : ''), 'mock', `data-kind="${k}"`, 'Start paper')).join('') +
+      (mockReady('full') ? card('🏁 Complete mock exam', `${info('full')} · English, Maths, then the three Reasoning sections, with a break in the middle. Allow about two hours.`, 'mock', 'data-kind="full"', 'Start mock') : ''), false) +
     (ready('english') ? `<div class="card"><div class="row spread"><div style="flex:1;min-width:220px"><h3>✏️ Writing task</h3><p class="muted small">The real test also includes a piece of writing. It is done on paper and is not marked here. Use the prompts and checklist to practise.</p></div>
       <a class="btn alt" href="#lesson/english/creative_writing">Open writing prompts</a></div></div>` : ''));
 }
@@ -774,7 +809,7 @@ function renderBetween() {
 }
 
 function renderSession() {
-  if (S.between) { stamp(); return renderBetween(); }
+  if (S.between) { stamp(); persist(); return renderBetween(); }
   stamp();
   const it = S.items[S.idx], q = it.q, fb = !S.parts;
   const part = S.parts && S.parts[S.part], lo = part ? part.from : 0, hi = part ? part.to : S.items.length;
@@ -826,6 +861,7 @@ function renderSession() {
   page(h + '</div></div>');
   view().classList.toggle('wide', !!q.p);
   S.qIdx = S.idx; S.qShown = Date.now();
+  persist();
   if (part) tick();
   const nx = $('#next'); if (nx) nx.focus({ preventScroll: true });
 }
@@ -949,8 +985,9 @@ function vProgress() {
     ${readinessCard()}
     <div class="grid"><div class="card"><h3>💪 Strongest</h3>${list(strong)}</div><div class="card"><h3>🌱 Needs a bit more work</h3>${list(need)}</div></div>
     <div class="card"><h3>Score trend</h3>${trendSVG(st.history.slice(0, 20).reverse())}</div>
-    ${SUBJECTS.filter(s => ready(s.id)).map(s => `<div class="card"><div class="row spread"><h3>${s.icon} ${esc(s.name)}</h3><span class="pill">${Math.round(subjectMastery(s.id) * 100)}% mastered</span></div>${bar(subjectMastery(s.id), 'g')}
-      <div style="margin-top:1rem">${B(s.id).topics.map(t => { const p = peek(s.id, t.id); return `<div style="margin:.55rem 0"><div class="row spread small"><a href="#topic/${s.id}/${t.id}">${esc(t.name)}</a><span class="muted">${p ? `${p.correct}/${p.seen} · ${LEVEL[p.level]}` : 'Not started'}</span></div>${bar(mastery(s.id, t.id))}</div>`; }).join('')}</div></div>`).join('')}
+    <h2>Topics by subject</h2><p class="muted small">Tap a subject to open or close it.</p>
+    ${SUBJECTS.filter(s => ready(s.id)).map(s => fold('prog-' + s.id, `<span class="ft" style="--c:${s.c}">${s.icon} ${esc(s.name)}</span><span class="pill">${Math.round(subjectMastery(s.id) * 100)}% mastered</span>`,
+      `${bar(subjectMastery(s.id), 'g')}<div style="margin-top:1rem">${B(s.id).topics.map(t => { const p = peek(s.id, t.id); return `<div style="margin:.55rem 0"><div class="row spread small"><a href="#topic/${s.id}/${t.id}">${esc(t.name)}</a> ${starRow(starsOf(s.id, t.id))}<span class="muted">${p ? `${p.correct}/${p.seen} · ${LEVEL[p.level]}` : 'Not started'}</span></div>${bar(mastery(s.id, t.id))}</div>`; }).join('')}</div>`, false, 'card')).join('')}
     <div class="card"><div class="row spread"><h3>Badges</h3><a class="btn alt" href="#trophies">🏆 Trophy room</a></div><div class="badges">${ids.length ? ids.map(b => `<span class="badge">${badgeInfo(b).icon} ${esc(badgeName(b))}</span>`).join('') : '<span class="badge off">Score 8 out of 10 in a topic quiz to earn your first badge</span>'}</div></div>`);
 }
 
@@ -1139,8 +1176,10 @@ function vSettings(note) {
 
 // ---------------------------------------------------------------- actions
 const ACT = {
-  exercise: d => startExercise(d.sid, d.tid),
-  quiz: d => startQuiz(d.sid, d.tid),
+  exercise: d => { if (S && S.mode === 'exercise' && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startExercise(d.sid, d.tid); },
+  quiz: d => { if (S && S.mode === 'quiz' && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startQuiz(d.sid, d.tid); },
+  endsession: () => { if (S) finish(true); },
+  restartex: d => { if (S) finish(false); startExercise(d.sid, d.tid); },
   test: d => startTest(d.sid),
   focus: d => startFocus(d.scope || 'all'),
   again: d => { const e = st.history.find(h => h.id === d.id); if (e) regenerate(e.cfg); },
@@ -1257,6 +1296,7 @@ document.addEventListener('click', e => {
   const f = ACT[el.dataset.act];
   if (f) { e.preventDefault(); f(el.dataset, el); }
 });
+document.addEventListener('toggle', e => { const d = e.target; if (d && d.dataset && d.dataset.fold) { st.settings.folds = st.settings.folds || {}; st.settings.folds[d.dataset.fold] = d.open; save(); } }, true);
 document.addEventListener('change', e => { const el = e.target.closest('[data-change]'); if (el && CHANGE[el.dataset.change]) CHANGE[el.dataset.change](el); });
 document.addEventListener('keydown', e => {
   if ($('#pop')) { if (e.key === 'Escape') closePop(); return; }
@@ -1268,7 +1308,7 @@ document.addEventListener('keydown', e => {
 // ---------------------------------------------------------------- routing
 function route() {
   const h = (location.hash || '#home').slice(1).split('/');
-  if (h[0] !== 'session' && S) finish(false);   // leaving mid-session still saves what was answered
+  if (h[0] !== 'session' && S) { stamp(); stopTimer(); persist(); }   // leaving pauses the activity; it can be continued later
   if (h[0] !== 'settings') resetArmed = false;
   if (h[0] !== 'parent' && h[0] !== 'history') parentOK = false;
   closePop(); if (canSpeak()) speechSynthesis.cancel();
@@ -1280,7 +1320,10 @@ function route() {
     case 'topic': vTopic(h[1], h[2]); break;
     case 'lesson': vLesson(h[1], h[2]); break;
     case 'tests': vTests(); break;
-    case 'session': if (S) renderSession(); else { location.hash = '#home'; return; } break;
+    case 'session':
+      if (!S) { location.hash = '#home'; return; }
+      if (S.parts && !S.between) { if (Date.now() >= S.deadline) { endPart(); break; } if (!timer) timer = setInterval(tick, 500); }
+      renderSession(); break;
     case 'history': h[1] ? vResult(h[1], h[2] === 'done') : vHistory(); break;
     case 'revise': vRevise(); break;
     case 'progress': vProgress(); break;
@@ -1295,6 +1338,8 @@ function route() {
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
-window.addEventListener('beforeunload', () => { if (S && !S.parts) finish(false); });
+window.addEventListener('beforeunload', () => { if (S) { stamp(); persist(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden && S) { stamp(); persist(); if (location.hash === '#session') { S.qIdx = S.idx; S.qShown = Date.now(); } } });
+restore();
 route();
 })();

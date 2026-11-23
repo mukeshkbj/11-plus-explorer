@@ -393,3 +393,19 @@ button, a, .opt { touch-action: manipulation; }
 .chipset { display: flex; flex-wrap: wrap; gap: .4rem; }
 .cchip { background: #ebfbee; border: 2px solid #b2f2bb; color: #2b8a3e; border-radius: 999px; padding: .2rem .7rem; font-weight: 700; font-size: .88rem; }
 .tryone { border: 2px dashed #b197fc; background: linear-gradient(180deg, #fcfaff, #fff); }
+
+/* collapsible sections */
+details.fold { margin: .8rem 0; }
+details.fold:not(.card) { background: transparent; }
+details.fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: .6rem; justify-content: space-between; font-weight: 800; font-size: 1.15rem; padding: .55rem .2rem; border-radius: 14px; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::after { content: "▾"; font-size: 1.1rem; color: var(--muted); transition: transform .2s; margin-left: .3rem; }
+details.fold:not([open]) > summary::after { transform: rotate(-90deg); }
+details.fold > summary:hover { background: rgba(76,110,245,.06); }
+details.fold > summary .ft { flex: 1; color: var(--c, var(--ink)); }
+details.fold.card > summary { padding: .2rem 0; }
+details.fold[open] > .fold-body { animation: foldin .25s ease-out; }
+@keyframes foldin { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* continue where you stopped */
+.resume { display: flex; justify-content: space-between; align-items: center; gap: .8rem; flex-wrap: wrap; background: linear-gradient(135deg, #e7f5ff, #fff); border: 2px solid #74c0fc; margin-top: 0; }
