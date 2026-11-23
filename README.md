@@ -62,6 +62,20 @@ open 11-plus-explorer/index.html
 - A study plan for the current stage, based on the exam date
 - Print or save as PDF
 
+## Sign-in (optional)
+
+Add your Firebase project's web config to `config.js` and the app opens with a sign-in page:
+Google, Facebook, Microsoft, Apple, GitHub or email. Signing in keeps every child's progress the same on
+every device. A **Use without an account** link keeps the app usable without signing in. Set-up steps
+for each provider are in [docs/LOGIN.md](docs/LOGIN.md).
+
+## AI practice and AI mock exams (optional)
+
+With a family's own Claude or OpenAI key, the app writes brand-new practice questions and complete
+mock exams at a chosen level: **Easy, Medium, Exam mix, Hard, Hard mix or Very hard** (beyond the Kent
+Test, for super-selective schools). If the chosen model isn't available for the key, the app finds one
+that is and switches to it automatically.
+
 ## Mobile apps (iOS and Android)
 
 The same app is packaged as native iOS and Android apps with [Capacitor](https://capacitorjs.com/).
@@ -119,6 +133,10 @@ Optional fields: `svg` (a figure shown with the question), `of` (picture options
 ## Privacy
 
 Progress is stored in the browser's local storage on the device and never leaves it, separately for each child. An optional AI key is stored on the device too, never in backup files, and is sent only to the AI company you choose. The Settings page can save a backup file and restore it on another device.
+
+## Copyright
+
+© Learn Earn & Fun. The code is released under the MIT licence (see LICENSE).
 
 ## Disclaimer
 

@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------- setup
 // ---- children on this device: each child has their own saved progress; the parent PIN is shared
 const PKEY = 'elevenplus.profiles';
-const sync = { fb: null, user: null, status: '', last: null, timer: null, busy: false };   // cloud sync state (see the sync section)
+const sync = { fb: null, user: null, status: '', last: null, timer: null, busy: false, ready: false };   // cloud sync state (see the sync section)
 const AVATARS = ['🦊', '🐼', '🦁', '🐯', '🐸', '🐙', '🦄', '🐧', '🐨', '🐬', '🦉', '🐲'];
 const keyFor = id => id === 'p1' ? 'elevenplus.v1' : 'elevenplus.v1.' + id;   // the first child keeps the original key, so nothing is lost
 function loadMeta() {
@@ -552,14 +552,51 @@ const AI_SCHEMA = { type: 'object', properties: {
   passage: { type: 'object', properties: { title: { type: 'string' }, kind: { type: 'string', enum: ['story', 'nonfiction', 'poem'] }, text: { type: 'string' } } },
   questions: { type: 'array', items: { type: 'object', properties: { q: { type: 'string' }, opts: { type: 'array', items: { type: 'string' } }, a: { type: 'integer' }, hint: { type: 'string' }, steps: { type: 'array', items: { type: 'string' } }, d: { type: 'integer' }, topic: { type: 'string' } }, required: ['q', 'opts', 'a', 'hint', 'steps'] } } },
   required: ['questions'] };
+// The AI company's own error text, so a parent can see exactly what went wrong.
+function apiMsg(body) { try { const j = JSON.parse(body); return String((j.error && (j.error.message || j.error.type)) || j.message || ''); } catch (e) { return ''; } }
 function aiError(status, body) {
-  if (status === 401 || status === 403) return 'The API key was not accepted. Check it in the parent view.';
-  if (status === 429) return 'The AI service is busy or the account has run out of credit. Try again in a minute, or check the account.';
-  if (status === 404 || /model/i.test(body || '')) return 'That AI model was not found for this key. Pick another model in the parent view.';
-  if (status >= 500) return 'The AI service had a problem. Please try again shortly.';
-  return 'The AI request did not work' + (status ? ` (error ${status})` : '') + '.';
+  const m = apiMsg(body), why = m ? ` The AI service said: "${m.slice(0, 200)}"` : '';
+  const err = t => { const e = new Error(t); e.status = status; return e; };
+  if (status === 401) return err('The API key was not accepted. Check it in the parent view (copy the whole key, with no spaces).' + why);
+  if (/credit balance|insufficient_quota|billing|exceeded your current quota/i.test(body || '')) return err('The AI account has no credit left. Add credit in your AI account (console.anthropic.com or platform.openai.com), then try again.');
+  if (status === 404 || /not_found_error|model_not_found|does not exist|unknown model/i.test(body || '')) { const e = err('That AI model is not available for this key.' + why); e.notFound = true; return e; }
+  if (status === 403) return err('This key is not allowed to use the AI service.' + why);
+  if (status === 429) return err('The AI service is busy. Wait a minute and try again.' + why);
+  if (status >= 500) return err('The AI service had a problem. Please try again shortly.');
+  return err('The AI request did not work' + (status ? ` (error ${status})` : '') + '.' + why);
 }
-async function aiRequest(prompt, maxTokens) {
+// Asks the AI company which models this key can use (used to pick a working model automatically).
+async function aiListModels(c) {
+  let res;
+  try {
+    res = c.provider === 'openai'
+      ? await fetch('https://api.openai.com/v1/models', { headers: { Authorization: 'Bearer ' + c.key } })
+      : await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': c.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' } });
+  } catch (e) { throw new Error('Could not reach the AI service. Check the internet connection and try again.'); }
+  const text = await res.text();
+  if (!res.ok) throw aiError(res.status, text);
+  let list = []; try { list = JSON.parse(text).data || []; } catch (e) { /* fall through */ }
+  if (c.provider === 'openai') return list.map(m => ({ id: m.id })).filter(m => /^(gpt-|o\d|chatgpt)/.test(m.id) && !/audio|realtime|tts|transcribe|search|image|embedding|instruct|vision|preview/.test(m.id));
+  return list.map(m => ({ id: m.id, name: m.display_name || m.id, max: m.max_tokens || 0 })).filter(m => /^claude/.test(m.id));
+}
+// The best model from the list: Sonnet first for Claude (good and fair-priced), a "mini" model first for OpenAI.
+function bestModel(list, provider) {
+  const ids = list.map(m => m.id);
+  const order = provider === 'openai' ? [/^gpt-.*mini/, /^gpt-/, /^o\d.*mini/, /./] : [/sonnet/, /haiku/, /opus/, /fable/, /./];
+  for (const r of order) { const hit = ids.find(id => r.test(id)); if (hit) return hit; }
+  return null;
+}
+// Saves the list on this device and moves to a working model if the chosen one is not on it.
+async function aiRefreshModels() {
+  const c = aiConf(); if (!c || !c.key) return null;
+  const list = await aiListModels(c);
+  if (!list.length) throw new Error('This key cannot use any suitable models. Check the account at the AI company.');
+  const keep = list.some(m => m.id === c.model), model = keep ? c.model : bestModel(list, c.provider);
+  const m = list.find(x => x.id === model) || {};
+  aiStore(Object.assign({}, c, { models: list.slice(0, 40), model, maxOut: m.max || 0 }));
+  return { model, changed: !keep, was: c.model };
+}
+async function aiRequestOnce(prompt, maxTokens) {
   const c = aiConf(); if (!c || !c.key) throw new Error('No AI key has been added yet. A grown-up can add one in the parent view.');
   let res;
   try {
@@ -568,18 +605,42 @@ async function aiRequest(prompt, maxTokens) {
         body: JSON.stringify({ model: c.model, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'You write 11+ practice questions. Reply with one JSON object only.' }, { role: 'user', content: prompt + '\n\nReply with JSON in this shape: {"passage": {"title": "", "kind": "story", "text": ""} (only when asked for a passage), "questions": [{"q": "", "opts": ["", "", "", "", ""], "a": 0, "hint": "", "steps": [""], "d": 2, "topic": ""}]}' }] }) });
     } else {
       res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': c.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model: c.model, max_tokens: maxTokens || 12000, tools: [{ name: 'save_questions', description: 'Save the finished, checked questions.', input_schema: AI_SCHEMA }], tool_choice: { type: 'tool', name: 'save_questions' }, messages: [{ role: 'user', content: prompt }] }) });
+        body: JSON.stringify({ model: c.model, max_tokens: Math.min(maxTokens || 12000, c.maxOut || 64000), tools: [{ name: 'save_questions', description: 'Save the finished, checked questions.', input_schema: AI_SCHEMA }], tool_choice: { type: 'tool', name: 'save_questions' }, messages: [{ role: 'user', content: prompt }] }) });
     }
   } catch (e) { throw new Error('Could not reach the AI service. Check the internet connection and try again.'); }
   const text = await res.text();
-  if (!res.ok) throw new Error(aiError(res.status, text));
+  if (!res.ok) throw aiError(res.status, text);
   let data; try { data = JSON.parse(text); } catch (e) { throw new Error('The AI sent back something unexpected. Please try again.'); }
   if (c.provider === 'openai') { try { return JSON.parse(data.choices[0].message.content); } catch (e) { throw new Error('The AI answer could not be read. Please try again.'); } }
   const block = (data.content || []).find(b => b.type === 'tool_use');
   if (!block) throw new Error('The AI answer could not be read. Please try again.');
   return block.input;
 }
-const LEVEL_WORDS = { 1: 'warm-up (gentle, single step)', 2: 'stretch (standard 11+ level, often two steps)', 3: 'challenge (the hardest 11+ questions, several steps or tricky wording)', mixed: 'a mix: about 30% warm-up, 45% stretch and 25% challenge, in order from easiest to hardest' };
+// AI difficulty levels. 'mixed' is a real-exam spread; 'hardmix' and 4 go beyond the usual Kent Test for children aiming high.
+const AI_LEVELS = {
+  1: { name: 'Easy', words: 'easy (gentle warm-up, one step, familiar wording)' },
+  2: { name: 'Medium', words: 'medium (standard Kent Test / GL level, often two steps)' },
+  3: { name: 'Hard', words: 'hard (the hardest questions in a real Kent Test: several steps, tricky wording or a trap to avoid)' },
+  4: { name: 'Very hard', words: 'very hard (harder than the real Kent Test, like super-selective grammar and independent school papers: multi-step, unfamiliar contexts, careful reading, larger numbers; still solvable without a calculator by a strong 10-year-old)' },
+  mixed: { name: 'Exam mix', words: 'a real-exam mix: about 30% easy, 45% medium and 25% hard, in order from easiest to hardest' },
+  hardmix: { name: 'Hard mix', words: 'a demanding mix: about 20% medium, 50% hard and 30% very hard, in order from easiest to hardest' }
+};
+// If the chosen model is not available for this key, find one that is, switch to it, and try once more.
+async function aiRequest(prompt, maxTokens) {
+  try { return await aiRequestOnce(prompt, maxTokens); }
+  catch (e) {
+    if (!e.notFound) throw e;
+    let r; try { r = await aiRefreshModels(); } catch (e2) { throw e; }
+    if (!r || !r.changed) throw e;
+    toast(`✨ Switched the AI model to ${r.model}, which works with this key.`);
+    return aiRequestOnce(prompt, maxTokens);
+  }
+}
+const LEVEL_WORDS = Object.fromEntries(Object.entries(AI_LEVELS).map(([k, v]) => [k, v.words]));
+const aiLevelName = l => (AI_LEVELS[l] || AI_LEVELS.mixed).name;
+const aiLv = () => aiLevelOK(st.settings.aiLevel || 'mixed');
+const AI_LEVEL_HELP = { 1: 'Easy: gentle questions to build confidence.', 2: 'Medium: the standard level of most Kent Test questions.', mixed: 'Exam mix: easy, medium and hard, like the real test. Best for mocks.', 3: 'Hard: the hardest kind of question in a real Kent Test.', hardmix: 'Hard mix: mostly hard and very hard. For children scoring well in normal mocks.', 4: 'Very hard: beyond the Kent Test, like super-selective papers. Expect lower scores, and that is fine.' };
+const aiLevelOK = l => (AI_LEVELS[l] ? (isNaN(+l) ? l : +l) : 'mixed');
 function aiPrompt(o) {
   const subjectName = B(o.sid).name, tops = o.tids.map(id => topicOf(o.sid, id)).filter(Boolean);
   return `You are writing practice questions for a child in Year 5 or 6 (age 9 to 11) in England who is preparing for the 11+ exam (the Kent Test, GL Assessment style). Use UK English spelling, pounds and pence, and metric units.
@@ -598,7 +659,7 @@ Rules for every question:
 - Write fractions like 3/4. Use the × and ÷ signs.
 - "hint": one short sentence that nudges without giving the answer away.
 - "steps": 2 to 4 short, friendly steps showing a method a 10-year-old can follow. The last step must be exactly "The answer is X." where X is the correct option, word for word.
-- "d": 1 for warm-up, 2 for stretch, 3 for challenge.
+- "d": 1 for easy, 2 for medium, 3 for hard, 4 for very hard.
 - Every question must be different, original, and suitable for children. Use kind, varied names and everyday situations.
 - Work every answer out a second time before you finish. If you are not completely sure a question has exactly one right answer, replace it.`;
 }
@@ -615,7 +676,7 @@ function aiClean(raw, o) {
     if (/answer is/i.test(last)) { if (!last.toLowerCase().includes(opts[a].toLowerCase().replace(/\.$/, ''))) return; }
     else steps.push(`The answer is ${opts[a]}.`);
     const tid = o.tids.includes(x.topic) ? x.topic : o.tids[0];
-    out.push({ id: `ai-${o.sid}-${stamp}-${i}-${Math.floor(Math.random() * 1e5)}`, subject: o.sid, topic: tid, d: [1, 2, 3].includes(+x.d) ? +x.d : (o.level === 'mixed' ? 2 : o.level), q: x.q.trim(), opts, a, hint: String(x.hint || 'Read the question carefully.'), steps, ai: true });
+    out.push({ id: `ai-${o.sid}-${stamp}-${i}-${Math.floor(Math.random() * 1e5)}`, subject: o.sid, topic: tid, d: Math.min(3, [1, 2, 3, 4].includes(+x.d) ? +x.d : (isNaN(+o.level) ? 2 : +o.level)), vh: +x.d === 4 || o.level === 4 || undefined, q: x.q.trim(), opts, a, hint: String(x.hint || 'Read the question carefully.'), steps, ai: true });
   });
   return out;
 }
@@ -655,10 +716,22 @@ async function aiRun(what, job) {
 function aiExercise(sid, tid, level) {
   const t = topicOf(sid, tid), passage = isPassageTopic(sid, tid);
   const kind = tid === 'comp_poetry' ? 'poem' : tid === 'comp_nonfiction' ? 'non-fiction article' : tid === 'cloze' ? 'story with numbered gaps written like (1), (2) where a word is missing; each question asks which word fills one gap' : 'story';
-  aiRun(`10 new ${t.name} questions`, async () => {
-    const qs = await aiMake({ sid, tids: [tid], n: passage ? 8 : 10, level: +level || 2, passage: passage ? kind : null });
+  level = aiLevelOK(level || 2);
+  aiRun(`10 new ${aiLevelName(level).toLowerCase()} ${t.name} questions`, async () => {
+    const qs = await aiMake({ sid, tids: [tid], n: passage ? 8 : 10, level, passage: passage ? kind : null });
     if (S) finish(false);
-    begin('exercise', sid, tid, qs, { target: qs.length, ai: true, label: 'AI practice', cfg: { k: 'aiex', sid, tid, level: +level || 2 } });
+    begin('exercise', sid, tid, qs, { target: qs.length, ai: true, hard: level === 3 || level === 4, label: `AI practice · ${aiLevelName(level)}`, cfg: { k: 'aiex', sid, tid, level } });
+  });
+}
+// A practice set across a whole subject (or the child's weak topics), at the chosen level. Hints and explanations, no timer.
+function aiPractice(sid, level, weakOnly) {
+  level = aiLevelOK(level);
+  let tids = plainTopics(sid);
+  if (weakOnly) { const w = weakTopics([sid], 4).map(x => x.tid).filter(id => tids.includes(id)); if (w.length) tids = w; }
+  aiRun(`15 new ${aiLevelName(level).toLowerCase()} ${B(sid).name} questions`, async () => {
+    const qs = await aiMake({ sid, tids, n: 15, level });
+    if (S) finish(false);
+    begin('exercise', sid, tids.length === 1 ? tids[0] : null, qs, { target: qs.length, ai: true, hard: level === 3 || level === 4, label: `AI practice set · ${aiLevelName(level)}`, cfg: { k: 'aiset', sid, level, weakOnly: !!weakOnly } });
   });
 }
 const AIMOCK = {
@@ -667,15 +740,17 @@ const AIMOCK = {
   vr: { name: 'AI Verbal reasoning paper', parts: ['vr'] },
   full: { name: 'AI complete mock exam', parts: ['english', 'maths', 'vr', 'nvr', 'spatial'] }
 };
-function aiMock(kind) {
+function aiMock(kind, level) {
   const m = AIMOCK[kind]; if (!m) return;
-  aiRun(`a brand new ${m.name.replace('AI ', '')}`, async () => {
+  level = aiLevelOK(level || 'mixed');
+  const lv = level, title = `${m.name}${lv === 'mixed' ? '' : ' · ' + aiLevelName(lv)}`;
+  aiRun(`a brand new ${m.name.replace('AI ', '')}${lv === 'mixed' ? '' : ' (' + aiLevelName(lv).toLowerCase() + ')'}`, async () => {
     const recent = recentTested();
     const jobs = m.parts.map(async p => {
-      if (p === 'maths') return { name: 'Maths', mins: scaled(25), qs: (await aiMake({ sid: 'maths', tids: plainTopics('maths'), n: 25, level: 'mixed' })).sort((a, b) => a.d - b.d) };
-      if (p === 'vr') return { name: 'Verbal reasoning', mins: scaled(20), qs: (await aiMake({ sid: 'vr', tids: plainTopics('vr'), n: 24, level: 'mixed' })).sort((a, b) => a.d - b.d) };
+      if (p === 'maths') return { name: 'Maths', mins: scaled(25), qs: (await aiMake({ sid: 'maths', tids: plainTopics('maths'), n: 25, level: lv })).sort((a, b) => a.d - b.d) };
+      if (p === 'vr') return { name: 'Verbal reasoning', mins: scaled(20), qs: (await aiMake({ sid: 'vr', tids: plainTopics('vr'), n: 24, level: lv })).sort((a, b) => a.d - b.d) };
       if (p === 'english') {
-        const [text, rest] = await Promise.all([aiMake({ sid: 'english', tids: ['comp_fiction'], n: 10, level: 'mixed', passage: 'story' }), aiMake({ sid: 'english', tids: ['spelling', 'punctuation', 'grammar', 'vocabulary', 'synonyms_antonyms', 'sentence_completion'], n: 14, level: 'mixed' })]);
+        const [text, rest] = await Promise.all([aiMake({ sid: 'english', tids: ['comp_fiction'], n: 10, level: lv, passage: 'story' }), aiMake({ sid: 'english', tids: ['spelling', 'punctuation', 'grammar', 'vocabulary', 'synonyms_antonyms', 'sentence_completion'], n: 14, level: lv })]);
         return { name: 'English', mins: scaled(25), qs: text.concat(rest.sort((a, b) => a.d - b.d)) };
       }
       return mockSection(p, recent);   // non-verbal and spatial reasoning come from the puzzle engine
@@ -683,7 +758,7 @@ function aiMock(kind) {
     const secs = await Promise.all(jobs);
     if (kind === 'full') secs[2].rest = true;
     if (S) finish(false);
-    timedSession('mock', kind === 'full' ? 'mix' : m.parts[0], m.name, secs, { k: 'aimock', kind });
+    timedSession('mock', kind === 'full' ? 'mix' : m.parts[0], title, secs, { k: 'aimock', kind, level: lv });
   });
 }
 
@@ -697,7 +772,8 @@ function regenerate(cfg) {
   else if (cfg.k === 'challenge') startChallenge(cfg.sid, cfg.tid);
   else if (cfg.k === 'hard') startHardTest(cfg.sid);
   else if (cfg.k === 'aiex') aiExercise(cfg.sid, cfg.tid, cfg.level);
-  else if (cfg.k === 'aimock') aiMock(cfg.kind);
+  else if (cfg.k === 'aimock') aiMock(cfg.kind, cfg.level);
+  else if (cfg.k === 'aiset') aiPractice(cfg.sid, cfg.level, cfg.weakOnly);
 }
 function startRevision() {
   const ids = shuffle(dueList()).slice(0, 15);
@@ -938,8 +1014,9 @@ function vTopic(sid, tid) {
       <div class="card"><h3>3. Quiz</h3><p class="muted small">10 questions. Score 8 or more to earn the topic star.</p><button class="btn alt" data-act="quiz" data-sid="${sid}" data-tid="${tid}">${here('quiz') ? `Continue quiz: question ${sessionWhere().num} of ${sessionWhere().total} →` : 'Take the quiz'}</button></div>
       <div class="card hardcard"><h3>4. 🔥 Challenge</h3><p class="muted small">Only the hardest questions, for when you feel ready. No timer, hints allowed.</p><button class="btn alt" data-act="challenge" data-sid="${sid}" data-tid="${tid}">${S && S.hard && S.subject === sid && S.topic === tid ? `Continue: question ${sessionWhere().num} of ${sessionWhere().total} →` : 'Take the challenge'}</button></div>
     </div>
-    ${sid !== 'nvr' && !t.extra ? (aiReady() ? `<div class="card aicard"><h3>✨ AI practice</h3><p class="muted small">Ten brand-new questions on ${esc(t.name)}, written by AI just for you. Choose a level:</p>
-      <div class="row">${[1, 2, 3].map(l => `<button class="btn ${l === (s ? s.level : 1) ? '' : 'alt'}" data-act="aiex" data-sid="${sid}" data-tid="${tid}" data-l="${l}">${LEVEL[l]}</button>`).join('')}</div></div>`
+    ${sid !== 'nvr' && !t.extra ? (aiReady() ? `<div class="card aicard"><h3>✨ AI practice</h3><p class="muted small">Ten brand-new questions on ${esc(t.name)}, written by AI just for you. Choose how hard:</p>
+      <div class="row">${[1, 2, 3, 4].map(l => `<button class="btn ${l === Math.min(3, (s ? s.level : 1) + 1) ? '' : 'alt'} ${l >= 3 ? 'hotbtn' : ''}" data-act="aiex" data-sid="${sid}" data-tid="${tid}" data-l="${l}">${l === 3 ? '🔥 ' : l === 4 ? '🔥🔥 ' : ''}${AI_LEVELS[l].name}</button>`).join('')}</div>
+      <p class="small muted" style="margin-top:.4rem">Very hard goes beyond the real Kent Test, for children aiming at the top grammar schools.</p></div>`
       : `<p class="small muted">✨ Want endless new questions written by AI? A grown-up can add an AI key in the <a href="#parent">parent view</a>.</p>`) : ''}`);
 }
 
@@ -974,8 +1051,14 @@ function vTests() {
     ` + fold('t-weak', '<span class="ft">🎯 Weak-spot test</span>', weak.length ? card('🎯 My weak spots', `${count} questions on ${tried ? 'the topics you find hardest right now' : 'four topics to get you started'}: ${weak.map(w => esc(w.name)).join(', ')}.`, 'focus', 'data-scope="all"', 'Start') : '', true) +
     fold('t-one', '<span class="ft">⏱️ 10-minute tests: one subject</span>', SUBJECTS.filter(s => ready(s.id)).map(s => card(`${s.icon} ${esc(s.name)}`, `${count} questions from across the subject.`, 'test', `data-sid="${s.id}"`, 'Start')).join(''), true) +
     fold('t-hard', '<span class="ft">🔥 Challenge tests: hard questions only</span>', SUBJECTS.filter(s => ready(s.id)).map(s => card(`${s.icon} ${esc(s.name)} challenge`, `${count} of the hardest questions, 10 minutes. For when you are flying!`, 'hardtest', `data-sid="${s.id}"`, 'Start')).join(''), false) +
-    fold('t-ai', '<span class="ft">✨ AI-made papers</span>', aiReady() ? `<p class="muted small">Brand-new papers written by AI each time. Non-verbal reasoning sections come from the puzzle engine. Writing a paper takes up to a minute.</p>` +
-      Object.keys(AIMOCK).map(k => card(`✨ ${esc(AIMOCK[k].name)}`, k === 'full' ? 'English, Maths and Verbal reasoning written by AI, plus Non-verbal and Spatial reasoning. Allow about two hours.' : 'A full-length timed paper, freshly written.', 'aimock', `data-kind="${k}"`, 'Write it')).join('')
+    fold('t-ai', '<span class="ft">✨ AI practice and AI mock exams</span>', aiReady() ? `<p class="muted small">Brand-new questions written by AI every time. Choose how hard first. Writing a paper takes up to a minute.</p>
+      <div class="card"><h3>How hard?</h3><div class="row lvpick" role="radiogroup" aria-label="AI difficulty">${['1', '2', 'mixed', '3', 'hardmix', '4'].map(l => `<button class="btn small-btn ${String(aiLv()) === l ? '' : 'alt'}" role="radio" aria-checked="${String(aiLv()) === l}" data-act="ailevel" data-l="${l}">${+l >= 3 || l === 'hardmix' ? '🔥 ' : ''}${AI_LEVELS[l].name}</button>`).join('')}</div>
+      <p class="small muted" style="margin-top:.4rem">${esc(AI_LEVEL_HELP[aiLv()])}</p></div>
+      <h3 class="subh">✏️ AI practice sets <span class="small muted">(hints and explanations, no timer)</span></h3>` +
+      ['maths', 'english', 'vr'].filter(ready).map(sid => card(`${(SUBJECTS.find(x => x.id === sid) || {}).icon || ''} ${esc(B(sid).name)}: 15 new questions`, `Across the whole subject, ${esc(aiLevelName(aiLv()).toLowerCase())}.`, 'aiset', `data-sid="${sid}"`, 'Write them')).join('') +
+      card('🎯 AI practice on my weak spots', `15 new questions on the topics you find hardest, ${esc(aiLevelName(aiLv()).toLowerCase())}.`, 'aiweak', '', 'Write them') +
+      `<h3 class="subh">📝 AI mock exams <span class="small muted">(timed, like the real test)</span></h3>` +
+      Object.keys(AIMOCK).map(k => card(`✨ ${esc(AIMOCK[k].name)}`, k === 'full' ? 'The complete exam: English, Maths and Verbal reasoning written by AI, plus Non-verbal reasoning puzzles drawn fresh by the puzzle engine (AI cannot draw the shapes reliably). Allow about two hours.' : 'A full-length timed paper, freshly written.', 'aimock', `data-kind="${k}"`, 'Write it')).join('')
       : `<div class="card"><p class="small">A grown-up can add an AI key in the <a href="#parent">parent view</a> to unlock brand-new AI-written exercises and mock papers.</p></div>`, false) +
     fold('t-mix', '<span class="ft">🔀 10-minute tests: mixed</span>', Object.keys(MIXES).filter(k => MIXES[k].sids.filter(ready).length > 1).map(k => card(`🔀 ${esc(MIXES[k].name)}`, `${count} questions, shared between the subjects.`, 'mix', `data-kind="${k}"`, 'Start')).join(''), false) +
     fold('t-mock', '<span class="ft">📝 Mock exams</span>', `<p class="muted small">Full-length papers laid out like the real test. Each section has its own clock, and you cannot go back to a section once it is finished. Find a quiet table before you start.</p>` +
@@ -1036,7 +1119,7 @@ function renderSession() {
     ${part ? '<div id="pace" class="pace" aria-live="polite"></div>' : ''}
     <div class="prog"><div style="width:${Math.round(100 * (fb ? answered : num) / total)}%"></div></div>
     <div class="${q.p ? 'split' : ''}">${passageHTML(q, true)}
-    <div class="card" id="qcard" data-qid="${q.id}"><div class="row spread"><div class="qnum">Question ${num} of ${total}${S.mode === 'exercise' || S.mode === 'fix' ? ' · ' + LEVEL[q.d] : ''}${!S.topic && fb ? ' · ' + esc(t.name) : ''}
+    <div class="card" id="qcard" data-qid="${q.id}"><div class="row spread"><div class="qnum">Question ${num} of ${total}${S.mode === 'exercise' || S.mode === 'fix' ? ' · ' + (q.ai ? (q.vh ? 'Very hard' : AI_LEVELS[q.d].name) : LEVEL[q.d]) : ''}${!S.topic && fb ? ' · ' + esc(t.name) : ''}
       ${tag === 'again' ? ' <span class="pill gold">Second chance</span>' : tag === 'twin' ? ' <span class="pill">Similar question</span>' : ''}${part && S.flags.has(S.idx) ? ' <span class="pill flagp">🚩 Flagged</span>' : ''}${q.ai ? ' <span class="pill aip">✨ AI-made</span>' : ''}</div>
       <div class="row tools">${helpful && canSpeak() ? '<button class="btn ghost" data-act="speak" data-sel="#qcard .qtext,#qcard .opts" aria-label="Read the question aloud">🔊 Read to me</button>' : ''}
       ${part ? `<button class="btn ghost ${S.flags.has(S.idx) ? 'on' : ''}" data-act="flag">${S.flags.has(S.idx) ? '🚩 Unflag' : '🚩 Flag to check later'}</button>` : ''}</div></div>
@@ -1136,7 +1219,7 @@ function vResult(id, done) {
   const br = topicBreakdown(e);
   const perQ = e.total ? Math.round(e.secs / e.total) : 0, target = e.mins ? Math.round(e.mins * 60 / e.total) : 0;
   const actions = [];
-  if (e.cfg) actions.push(`<button class="btn" data-act="again" data-id="${e.id}">${['challenge', 'aiex'].includes(e.cfg.k) ? '🔄 New set of questions' : e.cfg.k === 'aimock' ? '✨ Write another paper' : '🔄 Generate a new test'}</button>`);
+  if (e.cfg) actions.push(`<button class="btn" data-act="again" data-id="${e.id}">${['challenge', 'aiex', 'aiset'].includes(e.cfg.k) ? '🔄 New set of questions' : e.cfg.k === 'aimock' ? '✨ Write another paper' : '🔄 Generate a new test'}</button>`);
   if (wrong) actions.push(`<button class="btn ${e.cfg ? 'alt' : ''}" data-act="fix" data-id="${e.id}">🔧 Fix my mistakes (${wrong})</button>`);
   if (done && t) actions.push(`<button class="btn alt" data-act="${e.mode === 'quiz' ? 'quiz' : 'exercise'}" data-sid="${e.subject}" data-tid="${e.topic}">${e.mode === 'quiz' ? 'Try the quiz again' : 'Keep practising'}</button>`);
   if (done && t && e.mode === 'exercise') actions.push(`<button class="btn alt" data-act="quiz" data-sid="${e.subject}" data-tid="${e.topic}">Take the quiz</button>`);
@@ -1313,7 +1396,9 @@ function reportsCard() {
 // Changes from two devices are merged, so progress made on either device is never lost.
 const SYNCKEY = 'elevenplus.sync';
 const FB_VER = '10.12.2', FB_URL = m => `https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${m}.js`;
-function syncConf() { try { return JSON.parse(localStorage.getItem(SYNCKEY)) || null; } catch (e) { return null; } }
+const AUTHCFG = window.ELEVENPLUS_AUTH || {};
+const BUILTIN_FB = AUTHCFG.firebase && AUTHCFG.firebase.apiKey ? AUTHCFG.firebase : null;   // set by the site owner in config.js
+function syncConf() { if (BUILTIN_FB) return { config: BUILTIN_FB, builtin: true }; try { return JSON.parse(localStorage.getItem(SYNCKEY)) || null; } catch (e) { return null; } }
 function syncStore(c) { try { if (c) localStorage.setItem(SYNCKEY, JSON.stringify(c)); else localStorage.removeItem(SYNCKEY); } catch (e) { /* storage blocked */ } }
 // Accepts the snippet Firebase shows (const firebaseConfig = { apiKey: "...", ... }) or plain JSON.
 function parseFbConfig(text) {
@@ -1328,13 +1413,19 @@ async function syncInit() {
     const [app, auth, fs] = await Promise.all([import(FB_URL('app')), import(FB_URL('auth')), import(FB_URL('firestore'))]);
     const a = app.initializeApp(c.config, 'elevenplus');
     sync.fb = { app: a, auth: auth.getAuth(a), db: fs.getFirestore(a), A: auth, F: fs };
+    auth.getRedirectResult(sync.fb.auth).catch(e => { sync.status = authMsg(e); if (location.hash === '#login') vLogin(); });
     auth.onAuthStateChanged(sync.fb.auth, u => {
-      sync.user = u || null;
-      if (u) syncPullAll().then(() => { if (location.hash === '#parent' && parentOK) vParent(); });
+      const first = !sync.ready; sync.ready = true; sync.user = u || null;
+      if (u) {
+        if (location.hash === '#login') { vLogin(); syncPullAll().then(afterLogin); }
+        else syncPullAll().then(() => { if (location.hash === '#parent' && parentOK) vParent(); if (location.hash === '#settings') vSettings(); });
+      } else if (location.hash === '#login') vLogin();
+      else if (needLogin()) location.replace('#login');
       else if (location.hash === '#parent' && parentOK) vParent();
+      else if (!first && location.hash === '#settings') vSettings();
     });
     return sync.fb;
-  } catch (e) { sync.status = 'Could not load the sync service. Check the internet connection.'; return null; }
+  } catch (e) { sync.status = 'Could not load the sign-in service. Check the internet connection.'; sync.ready = true; if (location.hash === '#login') vLogin(); return null; }
 }
 const childRef = id => sync.fb.F.doc(sync.fb.db, 'families', sync.user.uid, 'children', id);
 const familyRef = () => sync.fb.F.doc(sync.fb.db, 'families', sync.user.uid);
@@ -1438,32 +1529,117 @@ function syncCard() {
       <pre class="code">${esc(rules)}</pre></details>
     <form data-submit="syncsave"><label for="fbcfg" style="margin-top:.7rem">Firebase web config</label><textarea id="fbcfg" class="inp" rows="6" style="width:100%" placeholder="const firebaseConfig = { apiKey: &quot;...&quot;, authDomain: &quot;...&quot;, projectId: &quot;...&quot;, ... };"></textarea>
     <button class="btn" type="submit" style="margin-top:.6rem">Save</button></form></div>`;
-  if (!sync.fb) return `<div class="card noprint" id="syncset"><h3>☁️ Sync between devices</h3><p class="small">${esc(sync.status || 'Connecting…')}</p><div class="row"><button class="btn alt" data-act="syncretry">Try again</button><button class="btn ghost" data-act="syncforget">Remove sync settings</button></div></div>`;
-  if (!u) return `<div class="card noprint" id="syncset"><h3>☁️ Sync between devices</h3><p class="small">Sign in with the same email and password on every device. The first time, press "Create account".</p>
+  const forget = c.builtin ? '' : '<button class="btn ghost small-btn" data-act="syncforget">Remove sync settings</button>';
+  if (!sync.fb) return `<div class="card noprint" id="syncset"><h3>☁️ Sync between devices</h3><p class="small">${esc(sync.status || 'Connecting…')}</p><div class="row"><button class="btn alt" data-act="syncretry">Try again</button>${forget}</div></div>`;
+  if (!u) return `<div class="card noprint" id="syncset"><h3>☁️ Sync between devices</h3><p class="small">Sign in with Google, Facebook, email or another account, and progress is kept the same on every device.</p>
     ${sync.status ? `<div class="box watch small">${esc(sync.status)}</div>` : ''}
-    <form data-submit="syncin"><label for="sem">Parent email</label><input id="sem" class="inp" type="email" autocomplete="username" style="width:100%">
-    <label for="spw" style="margin-top:.6rem">Password (at least 6 characters)</label><input id="spw" class="inp" type="password" autocomplete="current-password" style="width:100%">
-    <div class="row" style="margin-top:.8rem"><button class="btn" type="submit">Sign in</button><button class="btn alt" type="button" data-act="syncnew">Create account</button><button class="btn ghost" type="button" data-act="syncreset">Forgot password</button></div></form>
-    <p class="small"><button class="btn ghost small-btn" data-act="syncforget">Remove sync settings</button></p></div>`;
+    <div class="row"><a class="btn" href="#login">Sign in</a>${forget}</div></div>`;
   return `<div class="card noprint" id="syncset"><h3>☁️ Sync between devices <span class="pill">On</span></h3>
-    <p class="small">Signed in as <b>${esc(u.email || '')}</b>. ${sync.last ? `Last synced at ${new Date(sync.last).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}.` : 'Syncing…'} Progress for all ${meta.list.length} ${meta.list.length === 1 ? 'child' : 'children'} is kept the same on every device you sign in on.</p>
+    <p class="small">Signed in as <b>${esc(who(u))}</b>. ${sync.last ? `Last synced at ${new Date(sync.last).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}.` : 'Syncing…'} Progress for all ${meta.list.length} ${meta.list.length === 1 ? 'child' : 'children'} is kept the same on every device you sign in on.</p>
     ${sync.status ? `<div class="box watch small">${esc(sync.status)}</div>` : ''}
     <div class="row"><button class="btn alt" data-act="syncnow">Sync now</button><button class="btn ghost" data-act="syncout">Sign out</button></div></div>`;
 }
-async function syncAuth(kind) {
+// ---------------------------------------------------------------- sign-in page (Google, Facebook, Microsoft, Apple, GitHub, email)
+const GUESTKEY = 'elevenplus.guest';
+const PROVIDERS = {
+  google:    { name: 'Google',    icon: 'G', bg: '#ffffff', fg: '#1f1f1f', make: A => new A.GoogleAuthProvider() },
+  facebook:  { name: 'Facebook',  icon: 'f', bg: '#1877f2', fg: '#ffffff', make: A => new A.FacebookAuthProvider() },
+  microsoft: { name: 'Microsoft', icon: '⊞', bg: '#2f2f2f', fg: '#ffffff', make: A => new A.OAuthProvider('microsoft.com') },
+  apple:     { name: 'Apple',     icon: '🍎', bg: '#000000', fg: '#ffffff', make: A => { const p = new A.OAuthProvider('apple.com'); p.addScope('email'); return p; } },
+  github:    { name: 'GitHub',    icon: '⌥', bg: '#24292f', fg: '#ffffff', make: A => new A.GithubAuthProvider() },
+  twitter:   { name: 'X',         icon: '𝕏', bg: '#000000', fg: '#ffffff', make: A => new A.TwitterAuthProvider() },
+  yahoo:     { name: 'Yahoo',     icon: 'Y!', bg: '#6001d2', fg: '#ffffff', make: A => new A.OAuthProvider('yahoo.com') }
+};
+function guestChosen() { try { return localStorage.getItem(GUESTKEY) === '1'; } catch (e) { return true; } }
+function setGuest(on) { try { if (on) localStorage.setItem(GUESTKEY, '1'); else localStorage.removeItem(GUESTKEY); } catch (e) { /* ok */ } }
+// The sign-in page comes first when the site has sign-in set up and no one is signed in on this device.
+function needLogin() { const c = syncConf(); return !!(c && c.config) && !sync.user && !(AUTHCFG.allowGuest !== false && guestChosen()); }
+const who = u => (u && (u.email || u.displayName || (u.providerData && u.providerData[0] && (u.providerData[0].email || u.providerData[0].displayName)))) || 'your account';
+function provList() { const l = (AUTHCFG.providers || ['google', 'facebook', 'microsoft', 'apple', 'email']).filter(k => k === 'email' || PROVIDERS[k]); return isNative() ? l.filter(k => k === 'email') : l; }
+function afterLogin() {
+  let to = '#home'; try { to = sessionStorage.getItem('elevenplus.after') || '#home'; sessionStorage.removeItem('elevenplus.after'); } catch (e) { /* ok */ }
+  if (to === '#login') to = '#home';
+  if (meta.list.length > 1 && to === '#home') { try { sessionStorage.removeItem('elevenplus.chosen'); } catch (e) { /* ok */ } to = '#who'; }
+  location.replace(to);
+}
+function authMsg(e) {
+  const c = (e && e.code) || '';
+  if (c.includes('popup-closed') || c.includes('cancelled-popup')) return 'Sign-in was closed before it finished. Try again.';
+  if (c.includes('account-exists-with-different-credential')) return 'This email already uses a different sign-in button. Use the one you chose the first time.';
+  if (c.includes('wrong-password') || c.includes('invalid-credential') || c.includes('user-not-found')) return 'That email and password did not match. Try again, or press Create account the first time.';
+  if (c.includes('email-already')) return 'That email already has an account. Press Sign in instead.';
+  if (c.includes('weak-password')) return 'Please choose a password of at least 6 characters.';
+  if (c.includes('invalid-email')) return 'That email address does not look right.';
+  if (c.includes('operation-not-allowed')) return 'This sign-in option is not turned on yet. A parent needs to turn it on in Firebase (see docs/LOGIN.md).';
+  if (c.includes('unauthorized-domain')) return 'This website address is not allowed to sign in yet. Add it in Firebase → Authentication → Settings → Authorised domains.';
+  if (c.includes('network')) return 'No internet connection. Try again when you are online.';
+  if (c.includes('too-many-requests')) return 'Too many tries. Please wait a few minutes.';
+  return 'Sign-in problem: ' + ((e && e.message) || 'unknown error');
+}
+let loginNote = '', loginBusy = false, loginEmail = false;
+function vLogin() {
+  view().classList.remove('wide');
+  document.body.classList.add('gate');
+  const c = syncConf();
+  if (!c || !c.config) { document.body.classList.remove('gate'); location.replace('#home'); return; }
+  if (sync.user && sync.ready) {
+    view().innerHTML = `<div class="login"><div class="lcard"><div class="lowl">${OWL}</div><h1>Welcome back!</h1><p>Signed in as <b>${esc(who(sync.user))}</b>.</p><p class="small muted"><span class="spin"></span> Getting your progress…</p></div></div>`;
+    return;
+  }
+  const waiting = !sync.ready, list = provList(), note = loginNote || sync.status;
+  const pbtn = k => { const p = PROVIDERS[k]; return `<button class="btn pbtn" data-act="login" data-p="${k}" style="background:${p.bg};color:${p.fg};border-color:${p.bg === '#ffffff' ? '#c9d2de' : p.bg}" ${loginBusy ? 'disabled' : ''}><span class="pi" aria-hidden="true">${p.icon}</span>Continue with ${p.name}</button>`; };
+  const others = list.filter(k => k !== 'email'), hasEmail = list.includes('email');
+  const emailForm = `<form data-submit="loginemail" class="lform"><label for="sem">Email</label><input id="sem" class="inp" type="email" autocomplete="username" required>
+      <label for="spw">Password (at least 6 characters)</label><input id="spw" class="inp" type="password" autocomplete="current-password" minlength="6" required>
+      <div class="row"><button class="btn" type="submit" ${loginBusy ? 'disabled' : ''}>Sign in</button><button class="btn alt" type="button" data-act="loginnew" ${loginBusy ? 'disabled' : ''}>Create account</button></div>
+      <button class="linkbtn small" type="button" data-act="loginreset">Forgot password?</button></form>`;
+  view().innerHTML = `<div class="login"><div class="lcard">
+    <div class="lowl">${OWL}</div>
+    <h1>Welcome to 11+ Explorer</h1>
+    <p class="lsub">A grown-up signs in once. Stars, trophies and progress are then saved and kept the same on every device.</p>
+    ${note ? `<div class="box watch small" role="alert">${esc(note)}</div>` : ''}
+    ${waiting ? '<p class="small muted"><span class="spin"></span> Checking sign-in…</p>' : `
+    <div class="plist">${others.map(pbtn).join('')}</div>
+    ${hasEmail ? (others.length && !loginEmail ? `<button class="btn ghost pbtn" data-act="loginshowemail"><span class="pi" aria-hidden="true">✉️</span>Continue with email</button>` : (others.length ? '<div class="or"><span>or</span></div>' : '') + emailForm) : ''}
+    ${isNative() && AUTHCFG.providers && AUTHCFG.providers.some(k => k !== 'email') ? '<p class="small muted">In the phone app, sign in with email. Google, Facebook and the others work on the website.</p>' : ''}`}
+    ${AUTHCFG.allowGuest !== false ? `<div class="guest"><button class="linkbtn" data-act="loginguest">Use without an account →</button><p class="small muted">Progress stays on this device only. You can sign in later in Settings.</p></div>` : ''}
+    <p class="small muted lfoot">Children under 13 should not sign in with their own account. <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
+    <p class="small muted lfoot">© ${new Date().getFullYear()} Learn Earn &amp; Fun</p>
+  </div></div>`;
+}
+async function loginWith(k) {
+  if (!sync.fb) await syncInit(); if (!sync.fb) return vLogin();
+  const A = sync.fb.A, prov = PROVIDERS[k].make(A);
+  if (k === 'google') prov.setCustomParameters({ prompt: 'select_account' });
+  loginNote = ''; sync.status = ''; loginBusy = true; vLogin();
+  try { await A.signInWithPopup(sync.fb.auth, prov); }
+  catch (e) {
+    const c = (e && e.code) || '';
+    if (c.includes('popup-blocked') || c.includes('operation-not-supported')) { try { await A.signInWithRedirect(sync.fb.auth, prov); return; } catch (e2) { loginNote = authMsg(e2); } }
+    else loginNote = authMsg(e);
+  } finally { loginBusy = false; }
+  if (!sync.user) vLogin();
+}
+async function emailAuth(kind, back) {
   const em = (($('#sem') || {}).value || '').trim(), pw = ($('#spw') || {}).value || '';
   if (!sync.fb) await syncInit();
-  if (!sync.fb) return vParent();
+  if (!sync.fb) return back(sync.status);
   const A = sync.fb.A;
   try {
-    if (kind === 'reset') { if (!em) return vParent('Type your email first, then press Forgot password.'); await A.sendPasswordResetEmail(sync.fb.auth, em); return vParent('Password reset email sent.'); }
-    if (!em || pw.length < 6) return vParent('Please type an email and a password of at least 6 characters.');
+    if (kind === 'reset') { if (!em) return back('Type your email first, then press Forgot password.'); await A.sendPasswordResetEmail(sync.fb.auth, em); return back('Password reset email sent. Check your inbox.'); }
+    if (!em || pw.length < 6) return back('Please type an email and a password of at least 6 characters.');
+    loginBusy = true;
     if (kind === 'new') await A.createUserWithEmailAndPassword(sync.fb.auth, em, pw); else await A.signInWithEmailAndPassword(sync.fb.auth, em, pw);
-    sync.status = ''; vParent('Signed in. Syncing now…');
-  } catch (e) {
-    const c = (e && e.code) || '';
-    vParent(c.includes('wrong-password') || c.includes('invalid-credential') || c.includes('user-not-found') ? 'That email and password did not match. Try again, or press Create account the first time.' : c.includes('email-already') ? 'That email already has an account. Press Sign in instead.' : c.includes('operation-not-allowed') ? 'Email/Password sign-in is not turned on in your Firebase project (see step 2).' : 'Sign-in problem: ' + ((e && e.message) || 'unknown error'));
-  }
+    sync.status = '';
+  } catch (e) { back(authMsg(e)); }
+  finally { loginBusy = false; }
+}
+const loginBack = m => { loginNote = m || ''; loginEmail = true; vLogin(); const f = $('#sem'); if (f && m) f.focus(); };
+function accountCard() {
+  const c = syncConf(); if (!c || !c.config) return '';
+  if (sync.user) return `<div class="card"><h3>👤 Account</h3><p class="small">Signed in as <b>${esc(who(sync.user))}</b>. Progress for every child is saved to this account and kept the same on all your devices.</p>
+    <button class="btn ghost" data-act="signout">Sign out</button></div>`;
+  return `<div class="card"><h3>👤 Account</h3><p class="small muted">Not signed in. Progress is saved on this device only.</p><a class="btn alt" href="#login">Sign in</a></div>`;
 }
 
 // Parent settings for AI-made questions.
@@ -1476,10 +1652,11 @@ function aiCard() {
     <form data-submit="aisave">
       <label for="aiprov">AI company</label><select id="aiprov" data-change="aiprov"><option value="anthropic" ${prov === 'anthropic' ? 'selected' : ''}>Anthropic (Claude)</option><option value="openai" ${prov === 'openai' ? 'selected' : ''}>OpenAI</option></select>
       <label for="aimodel" style="margin-top:.7rem">Model</label>
-      ${prov === 'anthropic' ? `<select id="aimodel">${AI_MODELS.map(m => `<option value="${m[0]}" ${c.model === m[0] ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select>` : `<input id="aimodel" class="inp" type="text" value="${esc(c.model || '')}" placeholder="Type the model name from your OpenAI account" autocomplete="off">`}
+      ${c.models && c.models.length && c.provider === prov ? `<select id="aimodel">${c.models.map(m => `<option value="${esc(m.id)}" ${c.model === m.id ? 'selected' : ''}>${esc(m.name && m.name !== m.id ? `${m.name} (${m.id})` : m.id)}</option>`).join('')}</select><p class="small muted">These are the models your key can use.</p>`
+        : prov === 'anthropic' ? `<select id="aimodel">${AI_MODELS.map(m => `<option value="${m[0]}" ${c.model === m[0] ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select>` : `<input id="aimodel" class="inp" type="text" value="${esc(c.model || '')}" placeholder="Leave blank to pick one automatically" autocomplete="off">`}
       <label for="aikey" style="margin-top:.7rem">API key ${masked ? `<span class="muted small">(saved: ${esc(masked)})</span>` : ''}</label>
       <input id="aikey" class="inp" type="password" autocomplete="off" placeholder="${masked ? 'Leave blank to keep the saved key' : prov === 'anthropic' ? 'sk-ant-…' : 'sk-…'}" style="width:100%">
-      <div class="row" style="margin-top:.8rem"><button class="btn" type="submit">Save</button>${c.key ? '<button class="btn alt" type="button" data-act="aitest">Test the key</button><button class="btn ghost" type="button" data-act="airemove">Remove key</button>' : ''}</div>
+      <div class="row" style="margin-top:.8rem"><button class="btn" type="submit">Save</button>${c.key ? '<button class="btn alt" type="button" data-act="aitest">Test the key and find models</button><button class="btn ghost" type="button" data-act="airemove">Remove key</button>' : ''}</div>
     </form>
     <p class="small muted">Get a Claude key at console.anthropic.com, or an OpenAI key at platform.openai.com. Treat it like a password.</p></div>`;
 }
@@ -1578,6 +1755,7 @@ let resetArmed = false, removeArmed = null;
 function vSettings(note) {
   const days = Object.keys(st.time).sort().slice(-7);
   page(`<h1>Settings</h1>${note ? `<div class="box eg">${esc(note)}</div>` : ''}
+    ${accountCard()}
     ${storageOK ? '' : '<div class="box watch"><b>Progress cannot be saved in this browser window.</b> Check that private browsing is off, then reload.</div>'}
     <div class="card"><label for="board">Target exam</label>
       <select id="board" data-change="board">${Object.keys(BOARDS).map(k => `<option value="${k}" ${k === st.settings.board ? 'selected' : ''}>${esc(BOARDS[k].name)}</option>`).join('')}</select>
@@ -1598,7 +1776,7 @@ function vSettings(note) {
       <div class="row"><button class="btn alt" data-act="export">Save a backup file</button><label class="btn alt" style="margin:0">Restore from a backup<input type="file" accept="application/json,.json" data-change="import" hidden></label></div></div>
     <div class="card"><h3>Start again</h3><p class="muted small">This clears all stars, history and progress on this device.</p>
       <button class="btn warn" data-act="reset">${resetArmed ? 'Press again to clear everything' : 'Clear all progress'}</button></div>
-    <p class="muted small">No personal details are collected and nothing leaves this device unless a parent turns on AI questions or sync. <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>`);
+    <p class="muted small">No personal details are collected and nothing leaves this device unless a parent signs in, or turns on AI questions. <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>`);
 }
 
 // ---------------------------------------------------------------- actions
@@ -1607,10 +1785,14 @@ const ACT = {
   quiz: d => { if (S && S.mode === 'quiz' && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startQuiz(d.sid, d.tid); },
   endsession: () => { if (S) finish(true); },
   report: d => reportPop(d.id),
-  syncnew: () => syncAuth('new'),
-  syncreset: () => syncAuth('reset'),
+  login: d => loginWith(d.p),
+  loginshowemail: () => { loginEmail = true; vLogin(); const f = $('#sem'); if (f) f.focus(); },
+  loginnew: () => emailAuth('new', loginBack),
+  loginreset: () => emailAuth('reset', loginBack),
+  loginguest: () => { setGuest(true); loginNote = ''; document.body.classList.remove('gate'); afterLogin(); },
+  signout: () => { if (!sync.fb) return; setGuest(false); sync.fb.A.signOut(sync.fb.auth).then(() => { sync.user = null; loginNote = 'Signed out. Progress made so far stays on this device too.'; location.hash = '#login'; }); },
   syncnow: () => { syncPullAll().then(() => vParent(sync.status || 'Synced.')); },
-  syncout: () => { if (sync.fb) sync.fb.A.signOut(sync.fb.auth).then(() => vParent('Signed out. Progress stays on this device.')); },
+  syncout: () => ACT.signout(),
   syncretry: () => { sync.fb = null; syncInit().then(() => vParent()); },
   syncforget: () => { const done = () => { syncStore(null); sync.fb = null; sync.user = null; vParent('Sync settings removed from this device. Progress stays on this device.'); }; if (sync.fb && sync.user) sync.fb.A.signOut(sync.fb.auth).then(done, done); else done(); },
   unreport: d => { if (st.hidden) delete st.hidden[d.id]; st.reports = (st.reports || []).filter(x => x.id !== d.id); save(); vParent('Report removed. The question can come up again.'); },
@@ -1625,9 +1807,16 @@ const ACT = {
   challenge: d => { if (S && S.hard && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startChallenge(d.sid, d.tid); },
   hardtest: d => startHardTest(d.sid),
   aiex: d => aiExercise(d.sid, d.tid, d.l),
-  aimock: d => aiMock(d.kind),
+  aimock: d => aiMock(d.kind, aiLv()),
+  aiset: d => aiPractice(d.sid, aiLv()),
+  aiweak: () => { const w = weakTopics(['maths', 'english', 'vr'], 4); const sid = (w.find(x => ['maths', 'english', 'vr'].includes(x.sid)) || { sid: 'maths' }).sid; aiPractice(sid, aiLv(), true); },
+  ailevel: d => { st.settings.aiLevel = aiLevelOK(d.l); save(); vTests(); const f = document.querySelector('[data-fold=t-ai]'); if (f && f.scrollIntoView) f.scrollIntoView({ block: 'start' }); },
   airemove: () => { aiStore(null); vParent('AI key removed from this device.'); },
-  aitest: () => { const was = location.hash; aiRun('a test question', async () => { await aiMake({ sid: 'maths', tids: ['four_ops'], n: 3, level: 1 }); if (location.hash === was) vParent('✅ The AI key works. AI practice and AI papers are now available.'); }); },
+  aitest: () => { const was = location.hash; aiRun('a test question', async () => {
+    const r = await aiRefreshModels();
+    await aiMake({ sid: 'maths', tids: ['four_ops'], n: 3, level: 1 });
+    if (location.hash === was) vParent(`✅ The AI key works, using ${r.model}.${r.changed && r.was && r.was !== 'auto' ? ` (${r.was} is not available for this key, so the app switched.)` : ''} AI practice and AI papers are now available.`);
+  }); },
   restartex: d => { if (S) finish(false); startExercise(d.sid, d.tid); },
   test: d => startTest(d.sid),
   focus: d => startFocus(d.scope || 'all'),
@@ -1720,7 +1909,7 @@ const ACT = {
 };
 const SUBMIT = {
   syncsave: () => { const cfg = parseFbConfig(($('#fbcfg') || {}).value); if (!cfg) return vParent('That does not look like a Firebase web config. Copy the whole firebaseConfig block, including apiKey, projectId and appId.'); syncStore({ config: cfg }); sync.fb = null; syncInit().then(() => vParent(sync.fb ? 'Firebase connected. Now sign in or create an account.' : sync.status)); },
-  syncin: () => syncAuth('in'),
+  loginemail: () => emailAuth('in', loginBack),
   report: () => {
     const f = document.querySelector('form[data-submit=report]'); if (!f) return;
     const id = f.dataset.id, q = QI[id]; if (!q) return closePop();
@@ -1746,8 +1935,9 @@ const SUBMIT = {
     const old = aiConf() || {};
     const k = key || (old.provider === provider ? old.key : '');
     if (!k) return vParent('Please paste an API key.');
-    if (!model) return vParent('Please choose or type a model name.');
-    aiStore({ provider, key: k, model }); vParent('AI settings saved. Press "Test the key" to check it works.');
+    const same = old.provider === provider && old.key === k;
+    aiStore({ provider, key: k, model: model || (same && old.model) || (provider === 'anthropic' ? AI_MODELS[0][0] : 'auto'), models: same ? old.models : undefined, maxOut: same && old.model === model ? old.maxOut : 0 });
+    ACT.aitest();   // check the key straight away and find the models it can use
   },
   hello: () => { const v = (($('#hello') || {}).value || '').trim().slice(0, 20); if (!v) return; st.settings.name = v; me().name = v; saveMeta(); save(); sfx('right'); vHome(); toast(`Nice to meet you, ${v}! 🦉`); },
   setpin: () => { const v = ($('#pin1') || {}).value || ''; if (!/^\d{4,6}$/.test(v)) return vParent('The PIN must be 4 to 6 digits.'); meta.pin = hashPin(v); parentOK = true; saveMeta(); vParent('PIN saved.'); },
@@ -1794,6 +1984,8 @@ function route() {
   closePop(); if (canSpeak()) speechSynthesis.cancel();
   if (h[0] !== 'session') view().classList.remove('wide');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === h[0] || a.dataset.nav === ({ topic: 'learn', lesson: 'learn', session: '', tips: 'more', cert: 'trophies', progress: 'more', history: 'more', parent: 'more', settings: 'more' }[h[0]] ?? h[0])));
+  if (h[0] !== 'login') document.body.classList.remove('gate');
+  if (h[0] !== 'login' && needLogin()) { try { if (h[0] !== 'who') sessionStorage.setItem('elevenplus.after', location.hash || '#home'); } catch (e) { /* ok */ } location.replace('#login'); return; }
   if (!firstReady()) return page('<div class="card"><h1>No questions found</h1><p>The course data files did not load. Check that the data folder is next to index.html.</p></div>');
   switch (h[0]) {
     case 'learn': h[1] ? vSubject(h[1]) : vLearn(); break;
@@ -1813,6 +2005,7 @@ function route() {
     case 'trophies': vTrophies(); break;
     case 'more': vMore(); break;
     case 'who': vWho(); break;
+    case 'login': vLogin(); break;
     case 'cert': vCert(decodeURIComponent(h.slice(1).join('/'))); break;
     default: vHome();
   }
@@ -1821,9 +2014,10 @@ function route() {
 window.addEventListener('hashchange', route);
 window.addEventListener('beforeunload', () => { if (S) { stamp(); persist(); } });
 document.addEventListener('visibilitychange', () => { if (document.hidden && S) { stamp(); persist(); if (location.hash === '#session') { S.qIdx = S.idx; S.qShown = Date.now(); } } });
+document.querySelectorAll('.cy').forEach(e => { e.textContent = new Date().getFullYear(); });   // copyright year in the footer
 restore();
 if (syncConf()) syncInit();
 document.addEventListener('visibilitychange', () => { if (!document.hidden && sync.user) syncPullAll(); });
-try { if (meta.list.length > 1 && !sessionStorage.getItem('elevenplus.chosen') && (location.hash || '#home') === '#home') location.replace('#who'); } catch (e) { /* ok */ }
+try { if (!needLogin() && meta.list.length > 1 && !sessionStorage.getItem('elevenplus.chosen') && (location.hash || '#home') === '#home') location.replace('#who'); } catch (e) { /* ok */ }
 route();
 })();
