@@ -48,6 +48,10 @@ open 11-plus-explorer/index.html
 - Exam readiness score for each subject and a countdown to the exam date
 - Exam tips page covering technique, each subject and the day itself
 
+**Report a problem and sync**
+- 🚩 Report a problem on any question: it is hidden for that child and listed in the parent view, with a one-click GitHub report
+- ☁️ Optional sync between devices using your own free Firebase project (set-up steps are in the parent view)
+
 **Children on one device**
 - "Who's learning today?" screen with an animal for each child
 - Separate stars, history, revision, awards and parent report for every child
@@ -87,6 +91,7 @@ data/<subject>-questions.js  question bank
 data/gen-core.js           shared tools for the question generators
 data/maths-gen.js          maths question generators
 data/vr-gen.js             verbal reasoning question generators
+data/english-gen.js        spelling, grammar, synonym and apostrophe generators
 data/nvr-gen.js            non-verbal reasoning puzzle engine (seeded, so every puzzle can be rebuilt from its id)
 ```
 

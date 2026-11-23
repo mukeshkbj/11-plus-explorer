@@ -5,6 +5,7 @@
 // ---------------------------------------------------------------- setup
 // ---- children on this device: each child has their own saved progress; the parent PIN is shared
 const PKEY = 'elevenplus.profiles';
+const sync = { fb: null, user: null, status: '', last: null, timer: null, busy: false };   // cloud sync state (see the sync section)
 const AVATARS = ['🦊', '🐼', '🦁', '🐯', '🐸', '🐙', '🦄', '🐧', '🐨', '🐬', '🦉', '🐲'];
 const keyFor = id => id === 'p1' ? 'elevenplus.v1' : 'elevenplus.v1.' + id;   // the first child keeps the original key, so nothing is lost
 function loadMeta() {
@@ -14,7 +15,8 @@ function loadMeta() {
   return { list: [{ id: 'p1', name: (first.settings && first.settings.name) || '', avatar: '🦉' }], current: 'p1', pin: first.settings && first.settings.pin };
 }
 let meta = loadMeta();
-function saveMeta() { try { localStorage.setItem(PKEY, JSON.stringify(meta)); } catch (e) { /* storage blocked */ } }
+function saveMetaLocal() { try { localStorage.setItem(PKEY, JSON.stringify(meta)); } catch (e) { /* storage blocked */ } }
+function saveMeta() { saveMetaLocal(); if (sync.user) sync.fb.F.setDoc(familyRef(), { meta: { list: meta.list, pin: meta.pin || null }, updatedAt: Date.now() }).catch(() => {}); }
 if (!meta.list.some(p => p.id === meta.current)) meta.current = meta.list[0].id;
 let KEY = keyFor(meta.current);
 const me = () => meta.list.find(p => p.id === meta.current);
@@ -95,7 +97,7 @@ function load() {
   try { const r = localStorage.getItem(KEY); if (r) return Object.assign(fresh(), JSON.parse(r)); } catch (e) { storageOK = false; }
   return fresh();
 }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { storageOK = false; } }
+function save() { st.savedAt = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { storageOK = false; } if (sync.user) syncSoon(); }
 let st = load();
 if (!meta.pin && st.settings.pin) meta.pin = st.settings.pin;
 saveMeta();
@@ -104,7 +106,7 @@ saveMeta();
 const B = id => (window.BANK || {})[id];
 const ready = id => !!(B(id) && B(id).questions && B(id).questions.length);
 // Fresh generated questions are added each time the app opens: non-verbal reasoning puzzles, maths and verbal reasoning.
-const GEN_PER_LEVEL = { nvr: 12, maths: 8, vr: 8 };
+const GEN_PER_LEVEL = { nvr: 12, maths: 8, vr: 8, english: 8 };
 Object.keys(window.GENS || {}).forEach(sid => { if (!ready(sid)) return; const g = window.GENS[sid]; g.topics.forEach(t => { if (B(sid).topics.some(x => x.id === t)) B(sid).questions.push(...g.batch(t, GEN_PER_LEVEL[sid] || 6)); }); });
 const QIraw = {};
 SUBJECTS.forEach(s => { if (ready(s.id)) B(s.id).questions.forEach(q => { q.subject = s.id; QIraw[q.id] = q; }); });
@@ -151,7 +153,7 @@ function randomFresh(list, k, exclude, recent) {
     return { q, w: (recent && recent.has(q.id) ? 10 : 0) + Math.min(s.s || 0, 4) * 0.7 + Math.random() * 2.2 };
   }).sort((a, b) => a.w - b.w).slice(0, k).map(x => x.q);
 }
-const pool = (sid, tid, d) => B(sid).questions.filter(q => q.topic === tid && (!d || q.d === d));
+const pool = (sid, tid, d) => B(sid).questions.filter(q => q.topic === tid && (!d || q.d === d) && !(st.hidden && st.hidden[q.id]));
 // Reading passages: questions that share a passage are kept together in one sitting.
 const passages = sid => Object.assign({}, B(sid).passages || {}, (st.aip && st.aip[sid]) || {});
 const isPassageTopic = (sid, tid) => pool(sid, tid).some(q => q.p);
@@ -1052,7 +1054,8 @@ function renderSession() {
       ${S.msg === 'up' ? '<p><b>Level up!</b> Three in a row. The next questions are a bit trickier.</p>' : S.msg === 'down' ? '<p>Let\'s build confidence with some gentler questions next.</p>' : ''}
       <div class="row"><button class="btn" id="next" data-act="next">${last ? 'See how you did →' : 'Next question →'}</button>
       ${canSpeak() ? '<button class="btn ghost" data-act="speak" data-sel="#fbbox .steps,#fbbox .watch">🔊 Read the method</button>' : ''}
-      ${ok ? '' : `<button class="btn ghost" data-act="lessonpop" data-sid="${q.subject}" data-tid="${q.topic}">📖 Show me the lesson</button>`}</div></div>`;
+      ${ok ? '' : `<button class="btn ghost" data-act="lessonpop" data-sid="${q.subject}" data-tid="${q.topic}">📖 Show me the lesson</button>`}</div>
+      <p style="margin:.6rem 0 0">${st.hidden && st.hidden[q.id] ? '<span class="small muted">🚩 Reported. Thank you!</span>' : reportBtn(q.id)}</p></div>`;
   }
   if (!fb) {
     const blanks = [], flagged = [];
@@ -1075,6 +1078,27 @@ function renderSession() {
   const nx = $('#next'); if (nx) nx.focus({ preventScroll: true });
 }
 
+// ---- Report a problem: the question is hidden for this child and listed for a grown-up to check and send on
+const REPORT_REASONS = [['wrong', 'I think the marked answer is wrong'], ['confusing', 'The question is confusing'], ['typo', 'There is a typo or the picture is wrong'], ['level', 'It is much too hard for its level'], ['other', 'Something else']];
+const REPO_ISSUES = 'https://github.com/mukeshkbj/11-plus-explorer/issues/new';
+const reportBtn = id => `<button class="btn ghost small-btn" data-act="report" data-id="${esc(id)}">🚩 Report a problem</button>`;
+function reportPop(id) {
+  const q = QI[id]; if (!q) return;
+  closePop();
+  const d = document.createElement('div');
+  d.className = 'modal'; d.id = 'pop'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.setAttribute('aria-label', 'Report a problem');
+  d.innerHTML = `<div class="card pop"><h2 style="margin-top:0">🚩 Report a problem</h2><p class="small muted">Thank you! A grown-up will check it. This question will not come up again for you.</p>
+    <form data-submit="report" data-id="${esc(id)}">${REPORT_REASONS.map((x, i) => `<label class="check"><input type="radio" name="why" value="${x[0]}" ${i === 0 ? 'checked' : ''}> ${esc(x[1])}</label>`).join('')}
+    <label for="whynote" style="margin-top:.8rem">Anything else? (optional)</label><input id="whynote" class="inp" type="text" maxlength="200" autocomplete="off" style="width:100%">
+    <div class="row" style="margin-top:1rem"><button class="btn" type="submit">Send report</button><button class="btn ghost" type="button" data-act="closepop">Cancel</button></div></form></div>`;
+  document.body.appendChild(d);
+  d.addEventListener('click', ev => { if (ev.target === d) closePop(); });
+}
+function issueURL(rp) {
+  const q = QI[rp.id];
+  const body = `**Question id:** ${rp.id}\n**Subject / topic:** ${rp.subject} / ${rp.topic} (level ${rp.d})\n**Reason:** ${(REPORT_REASONS.find(x => x[0] === rp.why) || [])[1] || rp.why}\n${rp.note ? `**Note:** ${rp.note}\n` : ''}\n**Question:** ${rp.q}\n**Options:** ${(q ? q.opts : rp.opts || []).join(' | ')}\n**Marked answer:** ${rp.ans}\n`;
+  return `${REPO_ISSUES}?title=${encodeURIComponent('Question report: ' + rp.subject + ' / ' + rp.topic)}&body=${encodeURIComponent(body)}`;
+}
 function reviewList(items) {
   return items.map((x, n) => {
     const q = QI[x.id]; if (!q) return '';
@@ -1084,7 +1108,8 @@ function reviewList(items) {
       ${q.p && passages(q.subject)[q.p] ? `<p class="small muted">From: ${esc(passages(q.subject)[q.p].title)}</p>` : ''}
       <p>${x.c === null || x.c === undefined ? 'Left blank.' : `Your answer: <b>${showOpt(q, x.c)}</b>.`} ${ok ? '' : `The answer is <b>${showOpt(q, q.a)}</b>.`}</p>
       <ol>${q.steps.map(s => `<li>${rich(s)}</li>`).join('')}</ol>
-      ${ok ? '' : `<p class="small"><span class="muted">${esc(subj(q.subject).name)} · ${esc(t.name)}${x.t ? ' · ' + fmtSecs(x.t) + ' on this question' : ''}</span> · <a href="#lesson/${q.subject}/${q.topic}">Read the lesson</a></p>`}</details>`;
+      ${ok ? '' : `<p class="small"><span class="muted">${esc(subj(q.subject).name)} · ${esc(t.name)}${x.t ? ' · ' + fmtSecs(x.t) + ' on this question' : ''}</span> · <a href="#lesson/${q.subject}/${q.topic}">Read the lesson</a></p>`}
+      <p>${st.hidden && st.hidden[q.id] ? '<span class="small muted">🚩 Reported. Thank you!</span>' : reportBtn(q.id)}</p></details>`;
   }).join('');
 }
 // Score per topic for one attempt, weakest first.
@@ -1273,6 +1298,174 @@ function lessonPop(sid, tid) {
   d.querySelector('[data-act=closepop]').focus();
 }
 
+// Questions the child reported, for a grown-up to check and send to the app maker.
+function reportsCard() {
+  const list = st.reports || [];
+  return `<div class="card"><h3>🚩 Reported questions ${list.length ? `<span class="pill">${list.length}</span>` : ''}</h3>
+    ${list.length ? `<p class="small muted">These no longer come up for ${esc(me().name || 'your child')}. If a question really is wrong, send it to the app maker so it can be fixed for everyone.</p>
+      ${list.slice(0, 20).map(rp => `<div class="report"><p><b>${esc(rp.q).replace(/\n/g, '<br>')}</b></p><p class="small">Marked answer: <b>${esc(rp.ans)}</b> · ${esc((REPORT_REASONS.find(x => x[0] === rp.why) || [])[1] || rp.why)}${rp.note ? ` · "${esc(rp.note)}"` : ''} · <span class="muted">${esc(subj(rp.subject) ? subj(rp.subject).name : rp.subject)}, ${rp.day.split('-').reverse().join('/')}</span></p>
+        <div class="row noprint"><a class="btn alt" href="${issueURL(rp)}" target="_blank" rel="noopener">Send to the app maker (GitHub)</a><button class="btn ghost" data-act="unreport" data-id="${esc(rp.id)}">It's fine, show it again</button></div></div>`).join('')}`
+      : '<p class="small muted">Nothing reported. Children can press "🚩 Report a problem" on any question they think is wrong.</p>'}</div>`;
+}
+// ---------------------------------------------------------------- cloud sync between devices (optional, Firebase)
+// A parent pastes their own Firebase project's web settings and signs in with an email and password.
+// Each child's progress is stored at families/{user id}/children/{child id}. Nothing goes anywhere else.
+// Changes from two devices are merged, so progress made on either device is never lost.
+const SYNCKEY = 'elevenplus.sync';
+const FB_VER = '10.12.2', FB_URL = m => `https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${m}.js`;
+function syncConf() { try { return JSON.parse(localStorage.getItem(SYNCKEY)) || null; } catch (e) { return null; } }
+function syncStore(c) { try { if (c) localStorage.setItem(SYNCKEY, JSON.stringify(c)); else localStorage.removeItem(SYNCKEY); } catch (e) { /* storage blocked */ } }
+// Accepts the snippet Firebase shows (const firebaseConfig = { apiKey: "...", ... }) or plain JSON.
+function parseFbConfig(text) {
+  const out = {};
+  String(text || '').replace(/["']?(apiKey|authDomain|projectId|storageBucket|messagingSenderId|appId)["']?\s*:\s*["']([^"']+)["']/g, (m, k, v) => { out[k] = v; });
+  return out.apiKey && out.projectId && out.appId ? out : null;
+}
+async function syncInit() {
+  const c = syncConf(); if (!c || !c.config) return null;
+  if (sync.fb) return sync.fb;
+  try {
+    const [app, auth, fs] = await Promise.all([import(FB_URL('app')), import(FB_URL('auth')), import(FB_URL('firestore'))]);
+    const a = app.initializeApp(c.config, 'elevenplus');
+    sync.fb = { app: a, auth: auth.getAuth(a), db: fs.getFirestore(a), A: auth, F: fs };
+    auth.onAuthStateChanged(sync.fb.auth, u => {
+      sync.user = u || null;
+      if (u) syncPullAll().then(() => { if (location.hash === '#parent' && parentOK) vParent(); });
+      else if (location.hash === '#parent' && parentOK) vParent();
+    });
+    return sync.fb;
+  } catch (e) { sync.status = 'Could not load the sync service. Check the internet connection.'; return null; }
+}
+const childRef = id => sync.fb.F.doc(sync.fb.db, 'families', sync.user.uid, 'children', id);
+const familyRef = () => sync.fb.F.doc(sync.fb.db, 'families', sync.user.uid);
+// Merging two saved progress records for the same child: nothing either device did is lost.
+function mergeState(a, b) {
+  if (!a) return b; if (!b) return a;
+  const m = Object.assign(fresh(), a, b);
+  const newer = (a.savedAt || 0) >= (b.savedAt || 0) ? a : b;
+  const byId = new Map(); (a.history || []).concat(b.history || []).forEach(h => { if (h && h.id && !byId.has(h.id)) byId.set(h.id, h); });
+  m.history = [...byId.values()].sort((x, y) => y.ts - x.ts).slice(0, 400);
+  m.stars = Math.max(a.stars || 0, b.stars || 0);
+  const la = a.lastDay || '', lb = b.lastDay || ''; m.lastDay = la >= lb ? a.lastDay : b.lastDay; m.streak = la === lb ? Math.max(a.streak || 0, b.streak || 0) : (la > lb ? a.streak : b.streak);
+  m.badges = Object.assign({}, b.badges, a.badges); Object.keys(b.badges || {}).forEach(k => { if (a.badges && a.badges[k] && b.badges[k] < a.badges[k]) m.badges[k] = b.badges[k]; });
+  m.topic = Object.assign({}, a.topic); Object.entries(b.topic || {}).forEach(([k, v]) => { if (!m.topic[k] || (v.seen || 0) > (m.topic[k].seen || 0)) m.topic[k] = v; });
+  m.q = Object.assign({}, a.q); Object.entries(b.q || {}).forEach(([k, v]) => { if (!m.q[k] || (v.s || 0) > (m.q[k].s || 0)) m.q[k] = v; });
+  m.review = Object.assign({}, newer === a ? b.review : a.review, newer.review);
+  m.time = Object.assign({}, a.time); Object.entries(b.time || {}).forEach(([k, v]) => { m.time[k] = Math.max(m.time[k] || 0, v); });
+  m.lessons = Object.assign({}, a.lessons, b.lessons);
+  m.hidden = Object.assign({}, a.hidden, b.hidden);
+  const rp = new Map(); (a.reports || []).concat(b.reports || []).forEach(x => { if (x && !rp.has(x.id)) rp.set(x.id, x); }); m.reports = [...rp.values()].slice(0, 100);
+  m.aiq = Object.assign({}, a.aiq, b.aiq); m.aip = Object.assign({}, a.aip, b.aip);
+  m.settings = Object.assign({}, newer === a ? b.settings : a.settings, newer.settings);
+  m.active = newer.active; m.last = newer.last; m.plan = newer.plan; m.rank = Math.max(a.rank || 0, b.rank || 0);
+  m.savedAt = Math.max(a.savedAt || 0, b.savedAt || 0);
+  return m;
+}
+// AI questions are left out of the cloud copy to keep it small; everything else is kept.
+const cloudCopy = o => { const c = Object.assign({}, o); delete c.aiq; delete c.aip; return JSON.stringify(c); };
+async function syncChild(id) {
+  const F = sync.fb.F, ref = childRef(id);
+  const snap = await F.getDoc(ref);
+  const remote = snap.exists() ? JSON.parse(snap.data().state || 'null') : null;
+  let local = null; try { local = JSON.parse(localStorage.getItem(keyFor(id))); } catch (e) { /* none */ }
+  if (id === meta.current) local = st;
+  const merged = mergeState(local, remote);
+  if (!merged) return;
+  if (id === meta.current) {
+    const keepActive = st.active;   // an activity in progress on this device stays as it is
+    st = Object.assign(fresh(), merged); if (S) st.active = keepActive;
+    try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* storage blocked */ }
+  } else { try { localStorage.setItem(keyFor(id), JSON.stringify(merged)); } catch (e) { /* storage blocked */ } }
+  await F.setDoc(ref, { state: cloudCopy(merged), updatedAt: Date.now(), name: (meta.list.find(p => p.id === id) || {}).name || '' });
+}
+async function syncPullAll() {
+  if (!sync.fb || !sync.user || sync.busy) return;
+  sync.busy = true;
+  try {
+    const F = sync.fb.F, fam = await F.getDoc(familyRef());
+    if (fam.exists()) {
+      const rm = fam.data().meta || {};
+      // First sync on this device: a local child whose name differs from the family's child with the same id
+      // is a different child (for example a sister's tablet), so give them their own id instead of merging.
+      const cf = syncConf() || {};
+      if (!cf.linked) {
+        (rm.list || []).forEach(rp => {
+          const mine = meta.list.find(x => x.id === rp.id);
+          if (mine && mine.name && rp.name && mine.name.trim().toLowerCase() !== rp.name.trim().toLowerCase()) {
+            const nid = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1e4);
+            try { const data = localStorage.getItem(keyFor(mine.id)); if (data) localStorage.setItem(keyFor(nid), data); localStorage.removeItem(keyFor(mine.id)); } catch (e) { /* storage blocked */ }
+            if (meta.current === mine.id) { meta.current = nid; KEY = keyFor(nid); }
+            mine.id = nid;
+          }
+        });
+        syncStore(Object.assign(cf, { linked: true }));
+      }
+      (rm.list || []).forEach(p => { const mine = meta.list.find(x => x.id === p.id); if (!mine) meta.list.push(p); else if (!mine.name && p.name) mine.name = p.name; });
+      if (!meta.pin && rm.pin) meta.pin = rm.pin;
+      saveMetaLocal();
+    }
+    await F.setDoc(familyRef(), { meta: { list: meta.list, pin: meta.pin || null }, updatedAt: Date.now() });
+    for (const p of meta.list) await syncChild(p.id);
+    sync.last = Date.now(); sync.status = '';
+    if (location.hash !== '#session' && location.hash !== '#parent') route(); else chips();
+  } catch (e) { sync.status = syncErr(e); }
+  finally { sync.busy = false; }
+}
+function syncErr(e) {
+  const c = (e && e.code) || '';
+  if (c.includes('permission')) return 'Sync was refused. Check the Firestore security rules (see the setup steps).';
+  if (c.includes('unavailable') || c.includes('network')) return 'Offline. Changes will sync when you are back online.';
+  if (c.includes('not-found')) return 'The Firestore database was not found. Create it in the Firebase console.';
+  return 'Sync problem: ' + ((e && e.message) || 'unknown error');
+}
+// After any change, sync the current child a few seconds later (several quick changes become one upload).
+function syncSoon() {
+  if (!sync.user) return;
+  clearTimeout(sync.timer);
+  sync.timer = setTimeout(async () => { if (sync.busy) return syncSoon(); sync.busy = true; try { await syncChild(meta.current); sync.last = Date.now(); sync.status = ''; } catch (e) { sync.status = syncErr(e); } finally { sync.busy = false; } }, 4000);
+}
+function syncCard() {
+  const c = syncConf(), u = sync.user;
+  const rules = `rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /families/{uid}/{document=**} {\n      allow read, write: if request.auth != null && request.auth.uid == uid;\n    }\n  }\n}`;
+  if (!c || !c.config) return `<div class="card noprint" id="syncset"><h3>☁️ Sync between devices (optional)</h3>
+    <p class="small">Keep each child's progress the same on every phone, tablet and computer. It uses your own free Firebase project, so the data stays in your Google account.</p>
+    <details class="small"><summary><b>Set-up steps (about 10 minutes, once)</b></summary><ol>
+      <li>Go to console.firebase.google.com and create a project (Google Analytics is not needed).</li>
+      <li>Build → Authentication → Get started → turn on <b>Email/Password</b>.</li>
+      <li>Build → Firestore Database → Create database (choose a location near you, start in production mode).</li>
+      <li>In Firestore → Rules, replace everything with the rules below and press Publish.</li>
+      <li>Project settings → Your apps → add a <b>Web app</b> (the &lt;/&gt; icon). Copy the <code>firebaseConfig</code> it shows and paste it below.</li></ol>
+      <pre class="code">${esc(rules)}</pre></details>
+    <form data-submit="syncsave"><label for="fbcfg" style="margin-top:.7rem">Firebase web config</label><textarea id="fbcfg" class="inp" rows="6" style="width:100%" placeholder="const firebaseConfig = { apiKey: &quot;...&quot;, authDomain: &quot;...&quot;, projectId: &quot;...&quot;, ... };"></textarea>
+    <button class="btn" type="submit" style="margin-top:.6rem">Save</button></form></div>`;
+  if (!sync.fb) return `<div class="card noprint" id="syncset"><h3>☁️ Sync between devices</h3><p class="small">${esc(sync.status || 'Connecting…')}</p><div class="row"><button class="btn alt" data-act="syncretry">Try again</button><button class="btn ghost" data-act="syncforget">Remove sync settings</button></div></div>`;
+  if (!u) return `<div class="card noprint" id="syncset"><h3>☁️ Sync between devices</h3><p class="small">Sign in with the same email and password on every device. The first time, press "Create account".</p>
+    ${sync.status ? `<div class="box watch small">${esc(sync.status)}</div>` : ''}
+    <form data-submit="syncin"><label for="sem">Parent email</label><input id="sem" class="inp" type="email" autocomplete="username" style="width:100%">
+    <label for="spw" style="margin-top:.6rem">Password (at least 6 characters)</label><input id="spw" class="inp" type="password" autocomplete="current-password" style="width:100%">
+    <div class="row" style="margin-top:.8rem"><button class="btn" type="submit">Sign in</button><button class="btn alt" type="button" data-act="syncnew">Create account</button><button class="btn ghost" type="button" data-act="syncreset">Forgot password</button></div></form>
+    <p class="small"><button class="btn ghost small-btn" data-act="syncforget">Remove sync settings</button></p></div>`;
+  return `<div class="card noprint" id="syncset"><h3>☁️ Sync between devices <span class="pill">On</span></h3>
+    <p class="small">Signed in as <b>${esc(u.email || '')}</b>. ${sync.last ? `Last synced at ${new Date(sync.last).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}.` : 'Syncing…'} Progress for all ${meta.list.length} ${meta.list.length === 1 ? 'child' : 'children'} is kept the same on every device you sign in on.</p>
+    ${sync.status ? `<div class="box watch small">${esc(sync.status)}</div>` : ''}
+    <div class="row"><button class="btn alt" data-act="syncnow">Sync now</button><button class="btn ghost" data-act="syncout">Sign out</button></div></div>`;
+}
+async function syncAuth(kind) {
+  const em = (($('#sem') || {}).value || '').trim(), pw = ($('#spw') || {}).value || '';
+  if (!sync.fb) await syncInit();
+  if (!sync.fb) return vParent();
+  const A = sync.fb.A;
+  try {
+    if (kind === 'reset') { if (!em) return vParent('Type your email first, then press Forgot password.'); await A.sendPasswordResetEmail(sync.fb.auth, em); return vParent('Password reset email sent.'); }
+    if (!em || pw.length < 6) return vParent('Please type an email and a password of at least 6 characters.');
+    if (kind === 'new') await A.createUserWithEmailAndPassword(sync.fb.auth, em, pw); else await A.signInWithEmailAndPassword(sync.fb.auth, em, pw);
+    sync.status = ''; vParent('Signed in. Syncing now…');
+  } catch (e) {
+    const c = (e && e.code) || '';
+    vParent(c.includes('wrong-password') || c.includes('invalid-credential') || c.includes('user-not-found') ? 'That email and password did not match. Try again, or press Create account the first time.' : c.includes('email-already') ? 'That email already has an account. Press Sign in instead.' : c.includes('operation-not-allowed') ? 'Email/Password sign-in is not turned on in your Firebase project (see step 2).' : 'Sign-in problem: ' + ((e && e.message) || 'unknown error'));
+  }
+}
+
 // Parent settings for AI-made questions.
 function aiCard() {
   const c = aiConf() || { provider: 'anthropic', model: AI_MODELS[0][0] }, prov = c.provider || 'anthropic';
@@ -1329,6 +1522,8 @@ function vParent(note) {
     <div class="card"><h3>Timed test scores</h3>${trendSVG(timed.slice(0, 15).reverse())}
       ${timed.length ? `<div class="tablewrap"><table><thead><tr><th>When</th><th>Paper</th><th class="num">Score</th><th class="num">Time</th><th></th></tr></thead><tbody>${timed.slice(0, 10).map(e => `<tr><td>${fmtWhen(e.ts)}</td><td>${esc(e.label || MODE[e.mode])}</td><td class="num">${e.score}/${e.total} (${Math.round(100 * e.score / e.total)}%)</td><td class="num">${fmtSecs(e.secs)}</td><td class="noprint"><a href="#history/${e.id}">Review</a></td></tr>`).join('')}</tbody></table></div>` : ''}</div>
     <div class="card"><h3>Badges</h3><div class="badges">${Object.keys(st.badges).map(b => `<span class="badge">${badgeInfo(b).icon} ${esc(badgeName(b))}</span>`).join('') || '<span class="badge off">None yet</span>'}</div></div>
+    ${reportsCard()}
+    ${syncCard()}
     ${aiCard()}`);
 }
 
@@ -1411,6 +1606,14 @@ const ACT = {
   exercise: d => { if (S && S.mode === 'exercise' && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startExercise(d.sid, d.tid); },
   quiz: d => { if (S && S.mode === 'quiz' && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startQuiz(d.sid, d.tid); },
   endsession: () => { if (S) finish(true); },
+  report: d => reportPop(d.id),
+  syncnew: () => syncAuth('new'),
+  syncreset: () => syncAuth('reset'),
+  syncnow: () => { syncPullAll().then(() => vParent(sync.status || 'Synced.')); },
+  syncout: () => { if (sync.fb) sync.fb.A.signOut(sync.fb.auth).then(() => vParent('Signed out. Progress stays on this device.')); },
+  syncretry: () => { sync.fb = null; syncInit().then(() => vParent()); },
+  syncforget: () => { const done = () => { syncStore(null); sync.fb = null; sync.user = null; vParent('Sync settings removed from this device. Progress stays on this device.'); }; if (sync.fb && sync.user) sync.fb.A.signOut(sync.fb.auth).then(done, done); else done(); },
+  unreport: d => { if (st.hidden) delete st.hidden[d.id]; st.reports = (st.reports || []).filter(x => x.id !== d.id); save(); vParent('Report removed. The question can come up again.'); },
   parentchild: d => { if (d.id === meta.current) return; if (S) { stamp(); stopTimer(); persist(); } meta.current = d.id; saveMeta(); KEY = keyFor(d.id); st = load(); S = null; restore(); F = null; TRY = null; lastStars = null; vParent(); },
   switchchild: d => { if (d.id === meta.current) { location.hash = '#home'; return; } switchChild(d.id); },
   removechild: d => {
@@ -1516,6 +1719,19 @@ const ACT = {
   }
 };
 const SUBMIT = {
+  syncsave: () => { const cfg = parseFbConfig(($('#fbcfg') || {}).value); if (!cfg) return vParent('That does not look like a Firebase web config. Copy the whole firebaseConfig block, including apiKey, projectId and appId.'); syncStore({ config: cfg }); sync.fb = null; syncInit().then(() => vParent(sync.fb ? 'Firebase connected. Now sign in or create an account.' : sync.status)); },
+  syncin: () => syncAuth('in'),
+  report: () => {
+    const f = document.querySelector('form[data-submit=report]'); if (!f) return;
+    const id = f.dataset.id, q = QI[id]; if (!q) return closePop();
+    const why = (f.querySelector('input[name=why]:checked') || {}).value || 'other', note = (($('#whynote') || {}).value || '').trim().slice(0, 200);
+    st.hidden = st.hidden || {}; st.hidden[id] = today();
+    st.reports = (st.reports || []).filter(x => x.id !== id);
+    st.reports.unshift({ id, day: today(), why, note, subject: q.subject, topic: q.topic, d: q.d, q: q.q, opts: q.opts, ans: q.opts[q.a] });
+    if (st.reports.length > 100) st.reports.length = 100;
+    save(); closePop(); toast('🚩 Thanks! The question has been reported.');
+    if (location.hash === '#session') renderSession(); else route();
+  },
   addchild: () => {
     const name = (($('#newname') || {}).value || '').trim().slice(0, 20); if (!name) return vWho('Please type a name.');
     const av = (document.querySelector('input[name=av]:checked') || {}).value || AVATARS[0];
@@ -1606,6 +1822,8 @@ window.addEventListener('hashchange', route);
 window.addEventListener('beforeunload', () => { if (S) { stamp(); persist(); } });
 document.addEventListener('visibilitychange', () => { if (document.hidden && S) { stamp(); persist(); if (location.hash === '#session') { S.qIdx = S.idx; S.qShown = Date.now(); } } });
 restore();
+if (syncConf()) syncInit();
+document.addEventListener('visibilitychange', () => { if (!document.hidden && sync.user) syncPullAll(); });
 try { if (meta.list.length > 1 && !sessionStorage.getItem('elevenplus.chosen') && (location.hash || '#home') === '#home') location.replace('#who'); } catch (e) { /* ok */ }
 route();
 })();

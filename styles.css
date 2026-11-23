@@ -435,3 +435,10 @@ details.fold[open] > .fold-body { animation: foldin .25s ease-out; }
 .avpick input:focus-visible + span { outline: 3px solid var(--accent); }
 @media (max-width: 760px) { .chips .chip.who { display: inline-flex !important; } .whoname { display: none; } }
 @media (max-width: 760px) { .chips .chip:nth-child(3) { display: none; } }
+
+/* reporting */
+.small-btn { min-height: 34px; font-size: .85rem; padding: .2rem .7rem; }
+.report { border-top: 1px solid var(--line); padding: .7rem 0; }
+.report:first-of-type { border-top: 0; }
+pre.code { background: #1d2b3a; color: #e9ecef; padding: .8rem; border-radius: 10px; overflow-x: auto; font-size: .8rem; }
+textarea.inp { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85rem; }
