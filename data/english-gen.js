@@ -137,5 +137,5 @@ function punctuation(r, d) {
   return Q(`Which sentence uses the apostrophe correctly? (There are lots of ${who}.)`, c, 'For more than one owner, when the word already ends in s, the apostrophe goes after the s.', [`There are lots of ${who}, and the word already ends in s.`, `So the apostrophe goes after the s: the ${who}' ${what}.`]);
 }
 
-window.GENCORE.register('english', { spelling, grammar, synonyms_antonyms: synonyms, punctuation });
+window.GENCORE.register('english', { spelling, grammar, synonyms_antonyms: synonyms, punctuation }, 2);
 })();

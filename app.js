@@ -110,10 +110,12 @@ const GEN_PER_LEVEL = { nvr: 12, maths: 8, vr: 8, english: 8 };
 Object.keys(window.GENS || {}).forEach(sid => { if (!ready(sid)) return; const g = window.GENS[sid]; g.topics.forEach(t => { if (B(sid).topics.some(x => x.id === t)) B(sid).questions.push(...g.batch(t, GEN_PER_LEVEL[sid] || 6)); }); });
 const QIraw = {};
 SUBJECTS.forEach(s => { if (ready(s.id)) B(s.id).questions.forEach(q => { q.subject = s.id; QIraw[q.id] = q; }); });
+// Exact duplicate questions are kept for looking up old history, but taken out of the pool so they are never asked twice.
+SUBJECTS.forEach(s => { if (!ready(s.id)) return; const seen = new Set(); B(s.id).questions = B(s.id).questions.filter(q => { const k = q.q + '|' + (q.svg || '') + '|' + (q.of || q.opts).join('|'); if (seen.has(k)) return false; seen.add(k); return true; }); });
 // Generated puzzles from earlier sessions are rebuilt from their id when history or revision needs them.
 const QI = new Proxy(QIraw, { get: (t, k) => {
   if (t[k] || typeof k !== 'string') return t[k];
-  const m = /^g-([a-z]+)-/.exec(k), g = m && window.GENS && window.GENS[m[1]];
+  const m = /^g\d*-([a-z]+)-/.exec(k), g = m && window.GENS && window.GENS[m[1]];
   if (g) { const q = g.fromId(k); if (q) { q.subject = m[1]; t[k] = q; } return q || undefined; }
   if (k.startsWith('ai-') && st.aiq && st.aiq[k]) return (t[k] = st.aiq[k]);
   return undefined;
@@ -491,8 +493,8 @@ function mockSection(key, recent) {
     case 'english': return { name: 'English', mins: scaled(25), qs: passageBlock('english', ['comp_fiction', 'comp_nonfiction', 'comp_poetry'], 10).concat(pickSpread('english', ['spelling', 'punctuation', 'grammar', 'vocabulary', 'synonyms_antonyms', 'sentence_completion'], 14, used, recent)) };
     case 'maths': return { name: 'Maths', mins: scaled(25), qs: pickSpread('maths', plainTopics('maths'), 25, used, recent) };
     case 'vr': return { name: 'Verbal reasoning', mins: scaled(20), qs: pickSpread('vr', plainTopics('vr'), 24, used, recent) };
-    case 'nvr': return { name: 'Non-verbal reasoning', mins: scaled(12), qs: pickSpread('nvr', ['odd_one_out', 'nvr_sequences', 'analogies', 'matrices', 'nvr_codes'], 16, used, recent) };
-    default: return { name: 'Spatial reasoning', mins: scaled(12), qs: pickSpread('nvr', ['reflections', 'rotations', 'hidden_shapes', 'nets', 'views_3d'], 16, used, recent) };
+    case 'nvr': return { name: 'Non-verbal reasoning', mins: scaled(12), qs: pickSpread('nvr', ['odd_one_out', 'nvr_sequences', 'analogies', 'matrices', 'nvr_codes', 'belongs_group'], 16, used, recent) };
+    default: return { name: 'Spatial reasoning', mins: scaled(12), qs: pickSpread('nvr', ['reflections', 'rotations', 'hidden_shapes', 'nets', 'views_3d', 'paper_folding', 'symmetry_complete', 'combine_shapes'], 16, used, recent) };
   }
 }
 const MOCKS = {

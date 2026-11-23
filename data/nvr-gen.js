@@ -335,9 +335,11 @@ function codes(r, d) {
       { name: 'number', vals: [1, 2, 3], word: v => v + (v === 1 ? ' shape' : ' shapes') },
       { name: 'size', vals: ['small', 'big'], word: v => 'a ' + v + ' shape' }
     ];
-    const use = d === 1 ? [feats[0], feats[1]] : d === 2 ? [feats[0], r.pick([feats[1], feats[2]])] : [feats[0], feats[1], feats[2]];
+    const alt = r.v >= 2 && r() < .5;   // version 2: codes for size, and number with shading
+    const use = alt ? (d === 1 ? [feats[1], feats[2]] : d === 2 ? [feats[0], feats[3]] : [feats[0], feats[1], feats[3]]) : d === 1 ? [feats[0], feats[1]] : d === 2 ? [feats[0], r.pick([feats[1], feats[2]])] : [feats[0], feats[1], feats[2]];
     use.forEach((f, i) => { f.code = {}; f.vals.forEach((v, k) => { f.code[v] = letters[i * 3 + k]; }); });
-    const fig = c => { const n = c.number || 1, big = c.size !== 'small', ps = n === 1 ? [[30, 30]] : n === 2 ? [[19, 30], [41, 30]] : [[30, 17], [18, 41], [42, 41]]; return { els: ps.map(p => ({ s: c.shape, x: p[0], y: p[1], r: n === 1 ? (big ? 17 : 10) : 9, f: c.shading || 'white' })) }; };
+    use.shapeDefault = feats[0].vals[0];
+    const fig = c => { const n = c.number || 1, big = c.size !== 'small', ps = n === 1 ? [[30, 30]] : n === 2 ? [[19, 30], [41, 30]] : [[30, 17], [18, 41], [42, 41]]; return { els: ps.map(p => ({ s: c.shape || use.shapeDefault, x: p[0], y: p[1], r: n === 1 ? (big ? 17 : 10) : 9, f: c.shading || 'white' })) }; };
     const combo = () => { const c = {}; use.forEach(f => { c[f.name] = r.pick(f.vals); }); return c; };
     const codeOf = c => use.map(f => f.code[c[f.name]]).join('');
     // examples: enough to show every value used by the target, and every letter identifiable
@@ -581,18 +583,23 @@ function views(r, d) {
 
 // ---------------------------------------------------------------- public API
 const GEN = { odd_one_out: oddOneOut, nvr_sequences: sequence, analogies: analogy, matrices: matrix, nvr_codes: codes, reflections: reflection, rotations: rotation, hidden_shapes: hidden, nets: nets, views_3d: views };
-function make(topic, d, seed) {
+// ver 2: new question types (see nvr-gen2.js). r.v is the version an id was made with, so old ids rebuild exactly.
+const VER = 2;
+function make(topic, d, seed, v) {
   const g = GEN[topic]; if (!g) return null;
+  v = v || VER;
   for (let k = 0; k < 6; k++) {
     let q = null;
-    try { q = g(rng(seed + k * 7919), d); } catch (e) { q = null; }
-    if (q) { q.id = `g-nvr-${topic}-${d}-${seed}`; q.topic = topic; q.d = d; q.gen = true; if (!q.svg) delete q.svg; if (!q.of) delete q.of; return q; }
+    try { const rr = rng(seed + k * 7919); rr.v = v; q = g(rr, d); } catch (e) { q = null; }
+    if (q) { q.id = `g${v > 1 ? v : ''}-nvr-${topic}-${d}-${seed}`; q.topic = topic; q.d = d; q.gen = true; if (!q.svg) delete q.svg; if (!q.of) delete q.of; return q; }
   }
   return null;
 }
-function fromId(id) { const m = /^g-nvr-([a-z_0-9]+)-(\d)-(\d+)$/.exec(id); return m ? make(m[1], +m[2], +m[3]) : null; }
+function fromId(id) { const m = /^g(\d*)-nvr-([a-z_0-9]+)-(\d)-(\d+)$/.exec(id); return m ? make(m[2], +m[3], +m[4], m[1] ? +m[1] : 1) : null; }
 // A batch of new questions for one topic: n at each level.
 function batch(topic, n) { const out = []; for (let d = 1; d <= 3; d++) for (let i = 0; i < n; i++) { const q = make(topic, d, Math.floor(Math.random() * 1e9)); if (q) out.push(q); } return out; }
-window.NVRGEN = { topics: Object.keys(GEN), make, fromId, batch, _fold: fold, _nets: NETS };
+window.NVRGEN = { get topics() { return Object.keys(GEN); }, make, fromId, batch, table: GEN, ver: VER, _fold: fold, _nets: NETS };
+// Drawing tools shared with nvr-gen2.js.
+window.NVRKIT = { SHAPES, CHIRAL, BASIC, REGULAR, CURVED, FILL, FILL_WORD, INK, FRAME, LET, sname, rnd, el, draw, dot, line, frame, svgOpen, cell, qmark, strip, key, options, result, spots, partsFigure, mirrorV, mirrorH, turn, nudge, norm, symCheck, mapEls, fold, NETS, SYM, det3, dotp, vk, vneg, cubeSVG };
 window.GENS = window.GENS || {}; window.GENS.nvr = window.NVRGEN;
 })();

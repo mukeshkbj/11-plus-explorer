@@ -478,3 +478,11 @@ body.gate header, body.gate #nav, body.gate #chips { display: none !important; }
 body.gate .foot { display: none; }
 @media (max-width: 760px) { .foot { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); } }
 @media print { .foot { padding: .5rem 0 0; } }
+/* tables inside questions: timetables, Carroll diagrams, tally charts */
+.fig table.tt { border-collapse: collapse; margin: .2rem auto; font-size: 1rem; background: #fff; }
+.fig table.tt th, .fig table.tt td { border: 2px solid var(--line); padding: .35rem .7rem; text-align: center; }
+.fig table.tt thead th, .fig table.tt tr:first-child th { background: var(--brand-l); }
+.fig table.tt tbody th { text-align: left; background: #f8fafc; }
+.fig table.carroll td { font-weight: 800; font-size: 1.2rem; min-width: 5rem; }
+.tally { font-family: ui-monospace, monospace; font-weight: 800; letter-spacing: .08em; font-size: 1.15rem; }
+.tally s { text-decoration-thickness: 2px; }

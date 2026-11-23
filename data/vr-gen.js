@@ -193,5 +193,5 @@ T.logic = (r, d) => {
   return null;
 };
 
-window.GENCORE.register('vr', T);
+window.GENCORE.register('vr', T, 2);
 })();

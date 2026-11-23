@@ -13,6 +13,10 @@ window.BANK.maths = {
       text: 'The four operations are adding, subtracting, multiplying and dividing. Adding and subtracting undo each other. Multiplying and dividing undo each other. These pairs are called inverses, and you can use them to check answers or find missing numbers.\n\nFor big multiplications, split a number into parts, multiply each part, then add. For division, ask "how many of these fit?" and use your times tables.\n\nWhen a calculation has several steps, follow the order: brackets first, then multiply and divide, then add and subtract.',
       example: '6 + 4 × 5. Multiply first: 4 × 5 = 20. Then add: 6 + 20 = 26.',
       watch: 'Do not just work from left to right. 6 + 4 × 5 is 26, not 50.' } },
+    { id: 'factors', name: 'Factors, multiples and primes', lesson: {
+      text: 'A factor of a number divides into it exactly. The factors of 12 are 1, 2, 3, 4, 6 and 12. Find them in pairs: 1 × 12, 2 × 6, 3 × 4.\n\nA multiple is in a number\'s times table. Multiples of 6 are 6, 12, 18, 24...\n\nA prime number has exactly two factors: 1 and itself (2, 3, 5, 7, 11, 13...). 1 is not prime, and 2 is the only even prime.\n\nA square number is a number times itself (7² = 49). A cube number is a number times itself three times (3³ = 27).\n\nThe highest common factor (HCF) is the biggest factor two numbers share. The lowest common multiple (LCM) is the smallest number in both times tables.',
+      example: 'Find the LCM of 6 and 8. Multiples of 6: 6, 12, 18, 24, 30. Multiples of 8: 8, 16, 24. The first number in both lists is 24.',
+      watch: '1 is not a prime number, because it has only one factor. And 9, 15, 21 and 27 look prime but are not: they are all in the 3 times table.' } },
     { id: 'fractions', name: 'Fractions', lesson: {
       text: 'A fraction shows equal parts of a whole. The bottom number (denominator) says how many equal parts there are. The top number (numerator) says how many parts you have.\n\nEquivalent fractions look different but are worth the same, such as 1/2 and 4/8. Make them by multiplying or dividing the top and bottom by the same number.\n\nTo find a fraction of an amount, divide by the bottom and multiply by the top. To add or subtract fractions, first give them the same denominator.',
       example: 'Find 3/4 of 20. Divide by the bottom: 20 ÷ 4 = 5. Multiply by the top: 5 × 3 = 15.',
@@ -69,6 +73,10 @@ window.BANK.maths = {
       text: 'Data can be shown in tables, bar charts, line graphs and pie charts. Always read the title, the labels and the scale before answering.\n\nThe mean is one kind of average. Add up all the values, then divide by how many values there are.\n\nThe range is the biggest value take away the smallest. The median is the middle value when the numbers are in order.\n\nIn a pie chart the whole circle is 360°. A sector of 90° is one quarter of the total.',
       example: 'Find the mean of 4, 7 and 10. Add: 4 + 7 + 10 = 21. There are 3 numbers: 21 ÷ 3 = 7.',
       watch: 'Check the scale on a chart. One grid line is not always worth 1.' } },
+    { id: 'probability', name: 'Probability', lesson: {
+      text: 'Probability tells us how likely something is. Use the words impossible, unlikely, even chance, likely and certain, or a number from 0 (impossible) to 1 (certain).\n\nWhen every outcome is equally likely: probability = number of ways it can happen ÷ total number of outcomes.\n\nThe probability of something NOT happening is 1 minus the probability that it does.\n\nTo find how many times to expect something, multiply the probability by the number of tries.',
+      example: 'A bag has 3 red and 5 blue counters. The probability of picking red is 3 out of 8 = 3/8. The probability of NOT picking red is 1 − 3/8 = 5/8.',
+      watch: 'Count the total first, and include every colour. With two dice there are 36 results, not 12: 1 + 6 and 6 + 1 are different results.' } },
     { id: 'word_problems', name: 'Word problems', lesson: {
       text: 'A word problem hides a calculation inside a story. Use four steps. Read it twice. Underline the numbers and the question. Decide which operations you need. Then check that your answer makes sense.\n\nClue words help. "Altogether" and "total" often mean add. "Left" and "difference" often mean subtract. "Each" and "rows of" often mean multiply. "Share equally" means divide.\n\nMany problems need two or three steps. Write down each step so you do not lose track.',
       example: 'Tickets cost £6 each. Dad buys 4 and pays with £30. Cost: 4 × £6 = £24. Change: £30 − £24 = £6.',
@@ -90,7 +98,10 @@ window.BANK.maths = {
     { front: 'Angles on a straight line add up to...', back: '180°' }, { front: 'Angles around a point add up to...', back: '360°' },
     { front: 'Area of a triangle', back: 'base × height ÷ 2' }, { front: 'Volume of a cuboid', back: 'length × width × height' },
     { front: 'Faces, edges and vertices of a cube', back: '6 faces, 12 edges, 8 vertices' }, { front: 'How do you find the mean?', back: 'Add all the values, then divide by how many there are' },
-    { front: 'What is the order of operations?', back: 'Brackets, then × and ÷, then + and −' }, { front: 'Sides of a heptagon', back: '7' }
+    { front: 'What is the order of operations?', back: 'Brackets, then × and ÷, then + and −' }, { front: 'Sides of a heptagon', back: '7' },
+    { front: 'The prime numbers under 30', back: '2, 3, 5, 7, 11, 13, 17, 19, 23, 29' }, { front: 'The first five cube numbers', back: '1, 8, 27, 64, 125' },
+    { front: 'Roman numerals: I, V, X, L, C, D, M', back: '1, 5, 10, 50, 100, 500, 1000' }, { front: 'Speed, distance and time', back: 'distance = speed × time' },
+    { front: 'Probability of NOT happening', back: '1 − probability it happens' }, { front: 'Two dice: how many possible results?', back: '36 (6 × 6)' }
   ],
   questions: []
 };
@@ -177,6 +188,16 @@ window.BANK.maths = {
       method: ['Read the title, the labels and the scale before you answer.', 'Mean: add them all, divide by how many. Median: put in order, take the middle. Mode: the most common. Range: biggest − smallest.', 'For pie charts, the whole circle (360°) is everyone.', 'For line graphs, read across from the axis carefully.'],
       checklist: ['Read the scale', 'Mean', 'Median: order first', 'Mode', 'Range'],
       traps: ['Finding the median without putting the numbers in order.', 'Reading a scale as going up in 1s when it goes up in 2s or 5s.']
+    },
+    factors: {
+      method: ['For factors, start at 1 and work in pairs: 1 × n, 2 × ?, 3 × ?... Stop when the pairs meet.', 'For multiples, count up in the times table.', 'To test for a prime, try dividing by 2, 3, 5 and 7. If none work (and the number is under 100), it is prime.', 'For HCF list the factors of both numbers; for LCM list the multiples of both. Pick the biggest shared factor or the first shared multiple.'],
+      checklist: ['Factor or multiple?', 'Work in pairs', 'Is 1 included?', 'Check by dividing'],
+      traps: ['Mixing up factors (smaller, divide in) and multiples (bigger, times table).', 'Calling 1 or 9 a prime number.', 'Squaring by doubling: 6² is 36, not 12.']
+    },
+    probability: {
+      method: ['Count the total number of equally likely outcomes.', 'Count how many of those give what you want.', 'Write it as a fraction: wanted ÷ total. Simplify if you can.', 'For "not", take the probability away from 1.'],
+      checklist: ['Total counted?', 'Wanted outcomes counted?', 'Simplest form?', 'Between 0 and 1?'],
+      traps: ['Forgetting one of the colours when finding the total.', 'Saying "even chance" for anything that is not exactly half.', 'Giving a probability bigger than 1.']
     },
     word_problems: {
       method: ['Read the whole question, then read it again.', 'Underline the numbers and the key words: "each", "altogether", "how many more", "left".', 'Decide what to do first, second and third. Write each step down.', 'Check the answer makes sense in the story, and has the right units.'],

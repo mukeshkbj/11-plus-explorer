@@ -43,7 +43,23 @@ window.BANK.nvr = {
     { id: 'views_3d', name: '3D views', lesson: {
       text: 'These questions show a shape built from cubes. You may be asked how many cubes there are, or what the shape looks like from above, from the front or from the side.\n\nTo count cubes, go one stack at a time. Remember the cubes you cannot see, underneath the top cube of each stack.\n\nThe view from above is called the plan. Each stack looks like one square, however tall it is.\n\nFrom the front or the side you see an outline. For each column in the outline, the height is the tallest stack in that line.',
       example: 'A stack of 3 cubes stands behind a stack of 1. From the front you see a column 3 high, because the tall stack shows above the short one. From above you see two squares.',
-      watch: 'Check which way you are looking. The view from the front and the view from the side are often different, and mirror images are common traps.' } }
+      watch: 'Check which way you are looking. The view from the front and the view from the side are often different, and mirror images are common traps.' } },
+    { id: 'belongs_group', name: 'Which belongs to the group?', lesson: {
+      text: 'A box shows a group of figures that all share something. You choose which option belongs with them.\n\nFirst look at what CHANGES from figure to figure: that cannot be the rule. Then look for what stays the SAME in every figure: the number of shapes, a shading, a position, or a link between two things (such as dots matching sides).',
+      example: 'Three figures each have a big shape with the same number of dots as it has sides: a triangle with 3 dots, a square with 4, a hexagon with 6. The answer is the pentagon with 5 dots.',
+      watch: 'Do not pick an option just because it looks like one of the group. It must follow the rule that ALL of them share.' } },
+    { id: 'paper_folding', name: 'Fold and punch', lesson: {
+      text: 'A square of paper is folded, and holes are punched through all the layers. You work out where the holes are when the paper is opened out.\n\nEvery hole goes through each layer. When you unfold, each hole appears again as a mirror image across the fold line, the same distance from the fold. So one fold doubles the number of holes, and two folds make four times as many.',
+      example: 'The left half is folded onto the right half and one hole is punched near the top right corner. When unfolded there are two holes: the one at the top right and its mirror image at the top left.',
+      watch: 'The new holes are reflected, not slid across. A hole close to the fold line stays close to it on the other side.' } },
+    { id: 'symmetry_complete', name: 'Complete the symmetry', lesson: {
+      text: 'Half of a pattern is drawn on a grid, with a dashed mirror line. You choose the picture that completes the pattern so that both halves are mirror images.\n\nEvery shaded square needs a partner on the other side, the same number of squares from the line. For a diagonal mirror line, a square crosses the diagonal: its row and column swap.',
+      example: 'A black square is 1 square to the left of an upright mirror line, in the top row. Its partner is 1 square to the right of the line, also in the top row.',
+      watch: 'A pattern that is copied across (slid) is not a reflection. Check squares near the line and far from it.' } },
+    { id: 'combine_shapes', name: 'Join the shapes', lesson: {
+      text: 'Two pieces made of squares are joined edge to edge. They are not turned or flipped. You choose the shape they could make.\n\nCount the squares first: the answer has the same total. Then find the first piece inside each option, facing the same way, and check that what is left is exactly the second piece.',
+      example: 'An L-shaped piece of 3 squares and a straight piece of 2 squares make a shape of 5 squares. Any option with 4 or 6 squares can be crossed out straight away.',
+      watch: 'Options often show one piece turned or flipped. That is not allowed here.' } },
   ],
   flashcards: [
     { front: 'What is a rotation?', back: 'A turn. The shape stays the same but faces a different way.' },
@@ -108,6 +124,26 @@ window.BANK.nvr = {
       checklist: ['Opposite pairs', 'Never seen together', 'Order round the corner'],
       traps: ['Forgetting that squares two apart in a row are opposite.', 'Not checking the order round the corner (a mirror image).'],
       extra: 'Best tip of all: draw a net on paper, cut it out and fold it. Doing it for real a few times makes these questions much easier.'
+    },
+    belongs_group: {
+      method: ['Look at the figures in the box one feature at a time: number of shapes, shading, sides, position.', 'Cross out anything that changes between the figures: it is not the rule.', 'Find what is true for EVERY figure in the box.', 'Check each option against that rule.'],
+      checklist: ['What changes?', 'What stays the same?', 'True for all of them?', 'Only one option fits'],
+      traps: ['Choosing an option because it looks like one figure in the box.', 'Using a rule that only works for two of the figures.']
+    },
+    paper_folding: {
+      method: ['Follow the folds in order and see which part of the paper the holes go through.', 'Unfold one fold at a time, starting with the last one.', 'Each time you unfold, reflect every hole across that fold line.', 'Count the holes: one fold gives twice as many, two folds four times as many.'],
+      checklist: ['Where is the fold line?', 'Reflect, do not slide', 'Same distance from the fold', 'Right number of holes'],
+      traps: ['Sliding the holes across instead of reflecting them.', 'Reflecting across the wrong line.', 'Forgetting to unfold the second fold.']
+    },
+    symmetry_complete: {
+      method: ['Find the mirror line.', 'Take one shaded square and count how far it is from the line.', 'Count the same distance on the other side and check that square is shaded in the option.', 'Do this for every square, including grey ones.'],
+      checklist: ['Mirror line', 'Same distance', 'Same row (or column)', 'Every square'],
+      traps: ['Choosing a pattern that has been slid across instead of reflected.', 'Missing one square near the mirror line.']
+    },
+    combine_shapes: {
+      method: ['Count the squares in both pieces and add them.', 'Cross out options with the wrong number of squares.', 'Find the first piece inside each option, facing the same way.', 'Check the rest is exactly the second piece, not turned or flipped.'],
+      checklist: ['Total squares', 'First piece facing the same way', 'Second piece facing the same way'],
+      traps: ['Allowing a piece to be turned or flipped.', 'Forgetting to count the squares first.']
     },
     views_3d: {
       method: ['Check which way you are looking: from above, from the front (the arrow) or from the side.', 'From above, you see one square for every stack, however tall it is.', 'From the front, you see the tallest stack in each column. Shorter stacks behind it are hidden.', 'Work column by column or row by row, then compare with the options.'],
