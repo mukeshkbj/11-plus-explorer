@@ -1,0 +1,60 @@
+/* Non-Verbal and Spatial Reasoning course. All figures are drawn as SVG by the question bank. */
+window.BANK = window.BANK || {};
+window.BANK.nvr = {
+  id: 'nvr',
+  name: 'Non-Verbal Reasoning',
+  topics: [
+    { id: 'odd_one_out', name: 'Odd one out', lesson: {
+      text: 'Five figures are shown. Four of them share something, and one does not. Your job is to find the one that does not fit.\n\nCheck one feature at a time. Is it the type of shape? The shading (white, grey or black)? The number of shapes or dots? The number of sides? The way the shape is facing?\n\nIf every figure is different in one feature, such as five different shapes, that feature is not the rule. Move on and check the next one. In harder questions the rule links two things, such as the number of dots matching the number of sides.',
+      example: 'A white square, a white star, a black circle, a white triangle and a white hexagon. The shapes are all different, so look at shading: four are white and one is black. The black circle is the odd one out.',
+      watch: 'Do not choose a figure just because it looks unusual. You must be able to say what the other four have in common.' } },
+    { id: 'nvr_sequences', name: 'Sequences', lesson: {
+      text: 'A row of boxes shows a pattern that changes step by step. You choose the figure that comes next.\n\nFollow one thing at a time from box to box. Does the shape turn? If so, how far and which way? Does the shading change in a repeating order? Does the shape grow or shrink? Does a dot move round the corners? Is a dot added or taken away each time?\n\nIn harder questions two or three things change at once. Work out each change separately, then put them together to build the next figure. Cross out any option that gets one of the changes wrong.',
+      example: 'An arrow points up, then right, then down, then left. It turns a quarter turn clockwise each time, so next it points up again.',
+      watch: 'Check the direction of a turn carefully. Clockwise goes the way the hands of a clock move.' } },
+    { id: 'analogies', name: 'Analogies', lesson: {
+      text: 'The first figure has been changed in some way to make the second figure. You must change the third figure in exactly the same way.\n\nDescribe the change in words. Perhaps the shape turned a quarter turn, or it got smaller, or black and white swapped over, or a small copy appeared inside, or the picture was flipped like a reflection.\n\nThen apply those same words to the third figure. The answer keeps the third figure\'s own shape: only the change is copied, not the first picture.',
+      example: 'A white square becomes a black square. A white triangle must become a black triangle.',
+      watch: 'Sometimes two changes happen together, such as turning and changing shade. Make sure your answer has both.' } },
+    { id: 'matrices', name: 'Matrices', lesson: {
+      text: 'A matrix is a grid of figures with one box left empty. The figures follow rules along the rows and down the columns.\n\nLook along the top row. What stays the same in every box, and what changes? Then look down the first column and ask the same questions.\n\nA common pattern is that each row has its own shape while each column has its own shading. In harder grids every row and every column contains each shape once and each shading once, like a puzzle where nothing repeats in a line.\n\nUse both rules to work out the missing box.',
+      example: 'Row 1 is all circles, row 2 all squares, row 3 all stars. Column 1 is white, column 2 grey, column 3 black. The box in row 3, column 2 must be a grey star.',
+      watch: 'Check your answer against the column as well as the row. It has to fit both.' } },
+    { id: 'nvr_codes', name: 'Codes', lesson: {
+      text: 'Each figure has a code made of letters underneath it. Each letter tells you about one feature of the figure, such as its shape, its shading or how many shapes there are.\n\nFind two figures that share a letter. Then ask what those two figures have in common. That is what the letter stands for.\n\nDo this for each position in the code. The first letters all describe the same kind of feature, and so do the second letters.\n\nOnce you know what every letter means, build the code for the last figure one letter at a time.',
+      example: 'A white circle is AX and a black circle is AY. Both are circles and both start with A, so A means circle. X means white and Y means black. A black square coded BY tells you B means square.',
+      watch: 'Keep the letters in the right order. If shape comes first in the examples, it comes first in your answer.' } },
+    { id: 'reflections', name: 'Reflections', lesson: {
+      text: 'A reflection is what you see in a mirror. The dashed line is the mirror line, and you must choose the picture that would appear on the other side.\n\nEvery part of the shape stays the same distance from the mirror line, but on the opposite side. Parts touching the line still touch it. Parts far from the line stay far away.\n\nWith a vertical mirror line, left and right swap over but nothing moves up or down. With a horizontal mirror line, top and bottom swap over but nothing moves left or right.',
+      example: 'An L-shape has its long side next to a vertical mirror line. In the reflection, the long side is still next to the line and the foot of the L points the opposite way.',
+      watch: 'A reflection is not the same as a turn. If the shape looks rotated instead of flipped, it is the wrong answer.' } },
+    { id: 'rotations', name: 'Rotations', lesson: {
+      text: 'A rotation turns a shape round, like turning a page on the table. The shape itself does not change at all.\n\nYou are shown a shape and must find the option that is the same shape turned round. The wrong options are usually mirror images, which have been flipped over, or shapes with a shaded square in the wrong place.\n\nChoose one easy feature, such as the shaded square, and note what is next to it. Then check each option: is the same thing still next to it, on the same side as you go round?\n\nIt can help to turn the paper, or to imagine turning your head.',
+      example: 'A shape like the letter L, with a black square at the top. After a half turn the L is upside down and the black square is at the bottom.',
+      watch: 'A mirror image can look very like a rotation. Trace round the shape from the shaded square in a clockwise direction and compare.' } },
+    { id: 'hidden_shapes', name: 'Hidden shapes', lesson: {
+      text: 'A simple shape is hidden inside one of five more complicated figures. It is exactly the same size and the same way up, but extra lines have been drawn across and around it.\n\nStudy the shape first. Notice its most unusual feature, such as a slanting side, a sharp point or a step.\n\nSearch each figure for that feature. When you find it, check that the rest of the shape is there too, with every side complete.\n\nIn the wrong options the shape may be turned round, flipped over, or missing one of its sides.',
+      example: 'The shape is a right-angled triangle with the slanting side going down from left to right. Look in each figure for a slanting line going that way, then check the two straight sides join its ends.',
+      watch: 'The hidden shape is never rotated or flipped. If you have to turn it to make it fit, it is not the answer.' } },
+    { id: 'nets', name: 'Nets of cubes', lesson: {
+      text: 'A net is a flat pattern that folds up to make a solid shape. A cube has six square faces, so a cube net has six squares. Not every pattern of six squares works: some fold so that two squares land on the same face.\n\nChoose one square as the base and imagine folding the others up around it.\n\nFaces that are opposite on the cube never touch. In a straight row of squares, a square is opposite the one two places along. Squares that share an edge in the net are neighbours on the cube, so they can never be opposite.\n\nA picture of a cube shows three faces. It can never show two faces that are opposite each other.',
+      example: 'In a row of four squares A, B, C, D: A is opposite C, and B is opposite D. The two squares left over are opposite each other.',
+      watch: 'A net with four squares in a row needs one extra square on each side of the row, not two on the same side.' } },
+    { id: 'views_3d', name: '3D views', lesson: {
+      text: 'These questions show a shape built from cubes. You may be asked how many cubes there are, or what the shape looks like from above, from the front or from the side.\n\nTo count cubes, go one stack at a time. Remember the cubes you cannot see, underneath the top cube of each stack.\n\nThe view from above is called the plan. Each stack looks like one square, however tall it is.\n\nFrom the front or the side you see an outline. For each column in the outline, the height is the tallest stack in that line.',
+      example: 'A stack of 3 cubes stands behind a stack of 1. From the front you see a column 3 high, because the tall stack shows above the short one. From above you see two squares.',
+      watch: 'Check which way you are looking. The view from the front and the view from the side are often different, and mirror images are common traps.' } }
+  ],
+  flashcards: [
+    { front: 'What is a rotation?', back: 'A turn. The shape stays the same but faces a different way.' },
+    { front: 'What is a reflection?', back: 'A flip in a mirror line. Left and right (or top and bottom) swap over.' },
+    { front: 'How many degrees in a quarter turn?', back: '90°' }, { front: 'How many degrees in a half turn?', back: '180°' },
+    { front: 'Which way is clockwise?', back: 'The way the hands of a clock move: top, right, bottom, left.' },
+    { front: 'How many faces, edges and corners does a cube have?', back: '6 faces, 12 edges, 8 corners' },
+    { front: 'In a cube net, which squares are opposite in a straight row?', back: 'Squares that are two apart' },
+    { front: 'What is a plan view?', back: 'The view looking straight down from above' },
+    { front: 'How many different nets make a cube?', back: '11' },
+    { front: 'Five things to check in a sequence', back: 'Shape, shading, size, turning, number of parts' }
+  ],
+  questions: []
+};

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>11+ Explorer</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#home"><span class="logo">11+</span> Explorer</a>
+  <nav id="nav">
+    <a href="#home" data-nav="home">Home</a>
+    <a href="#learn" data-nav="learn">Learn</a>
+    <a href="#tests" data-nav="tests">Tests</a>
+    <a href="#revise" data-nav="revise">Revise</a>
+    <a href="#progress" data-nav="progress">Progress</a>
+    <a href="#history" data-nav="history">History</a>
+    <a href="#parent" data-nav="parent">Parents</a>
+    <a href="#settings" data-nav="settings" aria-label="Settings">Settings</a>
+  </nav>
+</header>
+<main id="view" tabindex="-1"></main>
+
+<!-- Course data. Add a new subject by adding its two data files here. -->
+<script src="data/maths.js"></script>
+<script src="data/maths-questions.js"></script>
+<script src="data/english.js"></script>
+<script src="data/english-questions.js"></script>
+<script src="data/vr.js"></script>
+<script src="data/vr-questions.js"></script>
+<script src="data/nvr.js"></script>
+<script src="data/nvr-questions.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
