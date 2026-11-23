@@ -383,3 +383,13 @@ button, a, .opt { touch-action: manipulation; }
   .ranks { justify-content: center; }
   .cert-in { padding: 1.2rem .8rem; } .cert-k { font-size: 1.4rem; } .cert-name { font-size: 1.7rem; }
 }
+
+/* deeper lessons and Try one together */
+.box.method { background: #f3f0ff; }
+.box.method ol { margin: .3rem 0 0; padding-left: 1.3rem; }
+.box.method li { margin: .3rem 0; }
+.box.watch ul { margin: .5rem 0 0; padding-left: 1.2rem; }
+.checks { margin: .8rem 0; }
+.chipset { display: flex; flex-wrap: wrap; gap: .4rem; }
+.cchip { background: #ebfbee; border: 2px solid #b2f2bb; color: #2b8a3e; border-radius: 999px; padding: .2rem .7rem; font-weight: 700; font-size: .88rem; }
+.tryone { border: 2px dashed #b197fc; background: linear-gradient(180deg, #fcfaff, #fff); }

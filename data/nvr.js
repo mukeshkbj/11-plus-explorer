@@ -58,3 +58,62 @@ window.BANK.nvr = {
   ],
   questions: []
 };
+
+/* Deeper lesson notes for each topic: a step-by-step method, a checklist of things to look at, and common traps.
+   The app shows these under the lesson, followed by a "Try one together" question. */
+(function () {
+  const more = {
+    odd_one_out: {
+      method: ['Look at all five figures before you choose.', 'Check one feature at a time in every figure: shape first, then shading, number, size, direction and position.', 'If a feature is different in every figure (say, five different shapes), it is not the rule. Move on to the next one.', 'When four figures share something, check that the fifth really breaks it.', 'Nothing simple? Look for a link between two features, such as the number of dots matching the number of sides.'],
+      checklist: ['Shape', 'Shading', 'How many parts', 'Number of sides', 'Size', 'Direction', 'Position', 'Inside or outside', 'Turned or flipped'],
+      traps: ['Picking the figure that simply looks the most different, without a rule.', 'Stopping at the first difference: make sure the other four really do match each other.', 'Forgetting that turning a shape does not change it, but flipping it over does.']
+    },
+    nvr_sequences: {
+      method: ['Say what changes between box 1 and box 2.', 'Check that the same change happens between boxes 2 and 3, and boxes 3 and 4.', 'Look for more than one change. Shape, shading, number, position and turning can all change at once.', 'If the pattern seems to break, check whether it alternates: boxes 1, 3 and 5 follow one rule, and boxes 2 and 4 follow another.', 'Make every change once more to box 4, then find the option that matches all of them.'],
+      checklist: ['Turning: how far and which way?', 'Moving round the corners', 'Adding or taking away', 'Shading pattern', 'Getting bigger or smaller', 'One more side', 'Alternating'],
+      traps: ['Noticing one change when there are two.', 'Mixing up clockwise and anticlockwise.', 'Choosing the option that just copies the last box.']
+    },
+    analogies: {
+      method: ['Describe in words how the first figure becomes the second. For example: "it makes a quarter turn clockwise and the shading swaps".', 'Check every part: shape, shading, size, direction, number, and what is inside or outside.', 'Make exactly the same changes to the third figure.', 'Rule out options that make only one of the changes, or the right change the wrong way round.'],
+      checklist: ['Turned?', 'Flipped?', 'Shading swapped?', 'Bigger or smaller?', 'Inside and outside swapped?', 'Something added or taken away?'],
+      traps: ['Copying the second figure instead of changing the third one.', 'Turning the wrong way.', 'Seeing only one of two changes.']
+    },
+    matrices: {
+      method: ['Look along the top row. What stays the same and what changes?', 'Check that the same rule works in the middle row.', 'Now look down the columns.', 'Many grids use "one of each": each row and column has each shape, shading or number once. Work out which one is missing.', 'Choose the option that fits both the row and the column.'],
+      checklist: ['Same in each row', 'Changes going across', 'One of each', 'Counting', 'Turning across', 'Adding boxes together'],
+      traps: ['Checking only the row, or only the column.', 'Forgetting that the number of shapes can be part of the rule.']
+    },
+    nvr_codes: {
+      method: ['Each letter stands for one feature, such as shape, shading or number.', 'Find two figures that share a first letter. What else do they have in common? That is what the first letter means.', 'Do the same for the second letter, and the third if there is one.', 'Build the code for the new figure one letter at a time.', 'Check each letter against the examples before you choose.'],
+      checklist: ['Shape', 'Shading', 'Number', 'Size', 'Direction'],
+      traps: ['Mixing up which letter goes with which feature.', 'Choosing a code with the right letters in the wrong order.']
+    },
+    reflections: {
+      method: ['Look at the mirror line. An upright line swaps left and right. A flat line swaps top and bottom.', 'Pick one part and see how far it is from the mirror line. In the reflection it is the same distance away on the other side.', 'Check that each shape is flipped as well as moved.', 'Check every part, including the shading.'],
+      checklist: ['Same distance from the line', 'Left ↔ right for an upright line', 'Top ↔ bottom for a flat line', 'Each shape flipped', 'Shading stays the same'],
+      traps: ['Choosing the figure turned upside down instead of reflected.', 'Moving the parts across but forgetting to flip them.']
+    },
+    rotations: {
+      method: ['Work out the turn: a quarter turn (90°) or a half turn (180°), clockwise or anticlockwise.', 'Choose one part, such as the black shape, and follow it. In a quarter turn clockwise, the top goes to the right.', 'Check a second part the same way.', 'Make sure the answer is turned, not flipped.'],
+      checklist: ['Clockwise ↻ or anticlockwise ↺', 'Quarter or half turn', 'Follow one part', 'Not a mirror image'],
+      traps: ['Turning the wrong way.', 'Choosing a mirror image.', 'Moving the parts round but not turning each one.']
+    },
+    hidden_shapes: {
+      method: ['Study the small shape. Count its sides and spot its most unusual corner or slanted line.', 'Find that corner in the big figure.', 'Trace the outline from there, one side at a time.', 'The hidden shape is the same size and faces the same way. It is never turned or flipped.'],
+      checklist: ['Same size', 'Same direction', 'Same angles', 'Every side is there'],
+      traps: ['Choosing a shape that has been flipped or turned.', 'Choosing a shape with one side missing from the big figure.']
+    },
+    nets: {
+      method: ['Find the opposite faces first. In a straight line of three squares, the two end squares are opposite.', 'Opposite faces can never be seen together on a cube.', 'Cross out any option that shows an opposite pair.', 'For the options left, check the order of the three faces going round the corner.'],
+      checklist: ['Opposite pairs', 'Never seen together', 'Order round the corner'],
+      traps: ['Forgetting that squares two apart in a row are opposite.', 'Not checking the order round the corner (a mirror image).'],
+      extra: 'Best tip of all: draw a net on paper, cut it out and fold it. Doing it for real a few times makes these questions much easier.'
+    },
+    views_3d: {
+      method: ['Check which way you are looking: from above, from the front (the arrow) or from the side.', 'From above, you see one square for every stack, however tall it is.', 'From the front, you see the tallest stack in each column. Shorter stacks behind it are hidden.', 'Work column by column or row by row, then compare with the options.'],
+      checklist: ['Which direction?', 'Count the stacks', 'Tallest in each column', 'Left and right the right way round'],
+      traps: ['Mixing up the front view and the side view.', 'Choosing the view from behind, which has left and right swapped.']
+    }
+  };
+  window.BANK.nvr.topics.forEach(t => Object.assign(t.lesson, more[t.id] || {}));
+})();

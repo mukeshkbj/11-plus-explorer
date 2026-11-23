@@ -87,8 +87,16 @@ let st = load();
 // ---------------------------------------------------------------- question bank
 const B = id => (window.BANK || {})[id];
 const ready = id => !!(B(id) && B(id).questions && B(id).questions.length);
-const QI = {};
-SUBJECTS.forEach(s => { if (ready(s.id)) B(s.id).questions.forEach(q => { q.subject = s.id; QI[q.id] = q; }); });
+// Fresh non-verbal reasoning puzzles are drawn each time the app opens (12 per level per topic).
+if (window.NVRGEN && ready('nvr')) window.NVRGEN.topics.forEach(t => { B('nvr').questions.push(...window.NVRGEN.batch(t, 12)); });
+const QIraw = {};
+SUBJECTS.forEach(s => { if (ready(s.id)) B(s.id).questions.forEach(q => { q.subject = s.id; QIraw[q.id] = q; }); });
+// Generated puzzles from earlier sessions are rebuilt from their id when history or revision needs them.
+const QI = new Proxy(QIraw, { get: (t, k) => {
+  if (t[k] || typeof k !== 'string' || !k.startsWith('g-nvr-') || !window.NVRGEN) return t[k];
+  const q = window.NVRGEN.fromId(k); if (q) { q.subject = 'nvr'; t[k] = q; }
+  return q || undefined;
+} });
 const firstReady = () => (SUBJECTS.find(s => ready(s.id)) || {}).id;
 const subj = id => SUBJECTS.find(s => s.id === id);
 const topicOf = (sid, tid) => B(sid).topics.find(t => t.id === tid);
@@ -693,12 +701,14 @@ function vTopic(sid, tid) {
 function vLesson(sid, tid) {
   const t = ready(sid) && topicOf(sid, tid);
   if (!t) return vLearn();
+  if (!TRY || TRY.sid !== sid || TRY.tid !== tid) tryNew(sid, tid, 1);
   st.lessons[tkey(sid, tid)] = today(); st.last = { subject: sid, topic: tid };
   awards = []; checkAwards(); save();
   if (awards.length) setTimeout(() => celebrate(awards), 300);
   page(`<p><a href="#topic/${sid}/${tid}">← ${esc(t.name)}</a></p><h1>${esc(t.name)}</h1>
     ${canSpeak() ? '<p><button class="btn ghost" data-act="speak" data-sel="#view .lesson">🔊 Read this lesson to me</button></p>' : ''}
     <div class="card lesson">${lessonBody(t)}</div>
+    ${tryHTML()}
     ${t.extra ? `<div class="card"><h3>✏️ Writing practice</h3><p class="muted small">Pick a prompt, plan for 5 minutes, write for 20, then check for 5. Write on paper.</p>
       <div class="box eg"><p style="font-size:1.1rem"><b>${esc(t.extra.prompts[promptIdx % t.extra.prompts.length])}</b></p></div>
       <button class="btn alt" data-act="prompt" data-sid="${sid}" data-tid="${tid}">Give me another prompt</button>
@@ -970,10 +980,38 @@ function readinessCard() {
     ${SUBJECTS.filter(s => ready(s.id)).map(s => { const r = readiness(s.id); return `<div style="margin:.6rem 0"><div class="row spread small"><span>${s.icon} <b>${esc(s.name)}</b></span><span>${Math.round(r.v * 100)}% · ${readyLabel(r.v)}</span></div>${bar(r.v, r.v >= 0.7 ? 'g' : '')}</div>`; }).join('')}</div>`;
 }
 function lessonBody(t) {
-  return `<p>${rich(t.lesson.text).replace(/<br><br>/g, '</p><p>')}</p>
-    <div class="box eg"><h3>Worked example</h3><p>${rich(t.lesson.example)}</p></div>
-    <div class="box watch"><h3>Watch out!</h3><p>${rich(t.lesson.watch)}</p></div>`;
+  const L = t.lesson;
+  return `<p>${rich(L.text).replace(/<br><br>/g, '</p><p>')}</p>
+    ${L.method ? `<div class="box method"><h3>🧭 Step by step</h3><ol>${L.method.map(x => `<li>${rich(x)}</li>`).join('')}</ol></div>` : ''}
+    ${L.checklist ? `<div class="checks"><h3>✅ Things to check</h3><div class="chipset">${L.checklist.map(x => `<span class="cchip">${esc(x)}</span>`).join('')}</div></div>` : ''}
+    <div class="box eg"><h3>Worked example</h3><p>${rich(L.example)}</p></div>
+    <div class="box watch"><h3>Watch out!</h3><p>${rich(L.watch)}</p>${L.traps ? `<ul>${L.traps.map(x => `<li>${rich(x)}</li>`).join('')}</ul>` : ''}</div>
+    ${L.extra ? `<div class="box eg"><p>💡 ${rich(L.extra)}</p></div>` : ''}`;
 }
+// ---- "Try one together": a practice question inside the lesson, with the full method shown after answering.
+let TRY = null;
+function tryNew(sid, tid, level) {
+  const list = pool(sid, tid, level).length ? pool(sid, tid, level) : pool(sid, tid);
+  const q = randomFresh(list, 1)[0];
+  TRY = q ? { sid, tid, q: prep(q), chosen: null, level: level || 1 } : null;
+}
+function tryHTML() {
+  if (!TRY) return '';
+  const q = TRY.q, it = { chosen: TRY.chosen };
+  const done = TRY.chosen !== null, ok = TRY.chosen === q.a;
+  return `<div class="card tryone" id="tryone"><div class="row spread"><h2 style="margin:0">🤝 Try one together</h2><span class="pill">${LEVEL[q.d]}</span></div>
+    <p class="small muted">This one is just for practice. It does not count towards your scores.</p>
+    ${q.p ? passageHTML(q, false) : ''}
+    <div class="qtext">${rich(q.q)}</div>${q.svg ? `<div class="fig">${q.svg}</div>` : ''}
+    <div class="opts ${q.of ? 'pics' : ''}">${q.opts.map((o, i) => `<button class="opt ${q.of ? 'pic' : ''} ${done ? (i === q.a ? 'right' : i === TRY.chosen ? 'picked' : '') : ''}" data-act="trypick" data-i="${i}" ${done ? 'disabled' : ''}><span class="letter">${'ABCDE'[i]}</span>${q.of ? `<span class="ofig">${q.of[i]}</span>` : `<span>${rich(o)}</span>`}</button>`).join('')}</div>
+    ${done ? `<div class="fb ${ok ? 'ok' : 'try'}" id="tryfb"><div class="fbhead ${ok ? 'happy' : ''}">${OWL}<h3>${ok ? 'Yes! You worked it out.' : 'Good try. Let\'s look at it together.'}</h3></div>
+      ${ok ? '' : `<p>The answer is <b>${showOpt(q, q.a)}</b>.</p>`}
+      <ol class="steps">${q.steps.map(x => `<li>${rich(x)}</li>`).join('')}</ol>
+      <div class="row"><button class="btn" data-act="trynext" data-l="${Math.min(3, TRY.level + (ok ? 1 : 0))}">${ok ? 'Try a harder one →' : 'Try another →'}</button>
+      ${canSpeak() ? '<button class="btn ghost" data-act="speak" data-sel="#tryfb .steps">🔊 Read the method</button>' : ''}</div></div>`
+    : `<p><button class="btn ghost" data-act="tryhint">💡 Hint</button></p>${TRY.hint ? `<div class="box hint"><b>Hint:</b> ${rich(q.hint)}</div>` : ''}`}</div>`;
+}
+function renderTry() { const el = $('#tryone'); if (el) el.outerHTML = tryHTML(); }
 function closePop() { const p = $('#pop'); if (p) p.remove(); if (canSpeak()) speechSynthesis.cancel(); }
 function lessonPop(sid, tid) {
   const t = ready(sid) && topicOf(sid, tid);
@@ -1110,6 +1148,9 @@ const ACT = {
   flag: () => { if (!S || !S.parts) return; if (S.flags.has(S.idx)) S.flags.delete(S.idx); else S.flags.add(S.idx); renderSession(); },
   speak: d => { const txt = d.sel.split(',').map(sel => [...document.querySelectorAll(sel)].map(el => el.innerText).join('. ')).join('. '); speak(txt); },
   lessonpop: d => lessonPop(d.sid, d.tid),
+  trypick: d => { if (!TRY || TRY.chosen !== null) return; TRY.chosen = +d.i; const ok = TRY.chosen === TRY.q.a; renderTry(); sfx(ok ? 'right' : 'wrong'); if (ok) confetti(30); const f = $('#tryfb'); if (f && f.scrollIntoView) f.scrollIntoView({ block: 'nearest', behavior: reduced() ? 'auto' : 'smooth' }); },
+  trynext: d => { if (!TRY) return; tryNew(TRY.sid, TRY.tid, +d.l || 1); renderTry(); const el = $('#tryone'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); },
+  tryhint: () => { if (TRY) { TRY.hint = true; renderTry(); } },
   closepop: () => closePop(),
   print: () => window.print(),
   sound: () => { st.settings.sound = !soundOn(); save(); chips(); if (soundOn()) sfx('right'); },
