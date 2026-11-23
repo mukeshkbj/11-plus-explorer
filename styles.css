@@ -350,3 +350,36 @@ label.check input { width: 22px; height: 22px; }
 @media print { .cert { box-shadow: none; } body { background: #fff; } .confetti, .chips { display: none !important; } }
 .tiles.four .tile b { font-size: 1.8rem; display: flex; align-items: center; gap: .3rem; justify-content: center; }
 .tiles.four .tile > span { font-size: .85rem; text-align: center; }
+
+/* ================= phones and the iOS / Android app ================= */
+body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); -webkit-tap-highlight-color: transparent; }
+.top { padding-top: calc(.5rem + env(safe-area-inset-top)); }
+button, a, .opt { touch-action: manipulation; }
+#nav .ni { display: none; }
+.narrow-only { display: none !important; }
+.namecard { background: linear-gradient(135deg, #fff9db, #fff); border-color: #ffe066; }
+.namecard .inp { flex: 1; min-width: 160px; }
+@media (max-width: 760px) {
+  .top { gap: .4rem; }
+  .brand { font-size: 1.05rem; }
+  .chips { width: auto; margin-left: auto; }
+  .chips .chip:first-child, .chips .chip:nth-child(2) { display: none; }
+  #nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: rgba(255,255,255,.97); backdrop-filter: blur(8px); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgba(76,110,245,.08);
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; padding: .25rem .25rem calc(.25rem + env(safe-area-inset-bottom)); overflow: visible; }
+  #nav a { display: flex; flex-direction: column; align-items: center; gap: 0; padding: .3rem .1rem; border-radius: 12px; font-size: .7rem; }
+  #nav .ni { display: block; font-size: 1.35rem; line-height: 1.2; }
+  #nav a.on { background: var(--brand-l); }
+  .wide-only { display: none !important; }
+  .narrow-only { display: flex !important; }
+  main { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+  .toast { bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+  .owl { width: 64px; height: 64px; }
+  .bubble { font-size: .95rem; }
+  .qtext { font-size: 1.15rem; }
+  .opts { grid-template-columns: 1fr; }
+  .opts.pics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tiles.four .tile b { font-size: 1.4rem; }
+  .rankcard { flex-direction: column; text-align: center; }
+  .ranks { justify-content: center; }
+  .cert-in { padding: 1.2rem .8rem; } .cert-k { font-size: 1.4rem; } .cert-name { font-size: 1.7rem; }
+}

@@ -48,6 +48,10 @@ function prep(q) {
 // Turns a chosen option back into its place in the question bank, so history and review stay consistent.
 const orig = (q, c) => c === null || c === undefined || !q.perm ? c : q.perm[c];
 const canSpeak = () => 'speechSynthesis' in window;
+// Running inside the iOS or Android app (Capacitor) rather than a browser.
+const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const canPrint = () => !isNative();
+const buzz = ms => { try { if (isNative() && navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* optional */ } };
 function speak(text) {
   if (!canSpeak()) return;
   speechSynthesis.cancel();
@@ -248,7 +252,7 @@ const OWL = `<svg viewBox="0 0 100 100" class="owl" aria-hidden="true">
   <ellipse cx="50" cy="58" rx="34" ry="38" fill="#7950f2"/>
   <ellipse cx="50" cy="71" rx="20" ry="21" fill="#e5dbff"/>
   <path d="M42 66 q4 3 8 0 q4 3 8 0 M40 75 q5 3 10 0 q5 3 10 0" stroke="#b197fc" stroke-width="2" fill="none" stroke-linecap="round"/>
-  <path class="wing" d="M17 58 Q8 76 24 88 Q21 72 28 62Z"/><path class="wing r" d="M83 58 Q92 76 76 88 Q79 72 72 62Z"/>
+  <path class="wing" fill="#5f3dc4" d="M17 58 Q8 76 24 88 Q21 72 28 62Z"/><path class="wing r" fill="#5f3dc4" d="M83 58 Q92 76 76 88 Q79 72 72 62Z"/>
   <circle cx="36" cy="44" r="13" fill="#fff"/><circle cx="64" cy="44" r="13" fill="#fff"/>
   <g class="pupils"><circle cx="37" cy="45" r="6.5" fill="#1d2b3a"/><circle cx="63" cy="45" r="6.5" fill="#1d2b3a"/><circle cx="39.5" cy="42.5" r="2.2" fill="#fff"/><circle cx="65.5" cy="42.5" r="2.2" fill="#fff"/></g>
   <path d="M45 54 L55 54 L50 62 Z" fill="#ffb703"/>
@@ -580,6 +584,9 @@ function vHome() {
     <h1>${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}${nm}! Ready to explore?</h1>
     ${countdownHTML() ? `<p>${countdownHTML()}</p>` : ''}
     <div class="hero">${buddy(say, allDone ? 'happy' : '')}</div>
+    ${st.settings.name ? '' : `<div class="card namecard"><form data-submit="hello" class="row"><label for="hello" style="margin:0">👋 What's your first name?</label>
+      <input id="hello" class="inp" type="text" maxlength="20" autocomplete="off" placeholder="Type your name"><button class="btn" type="submit">Save</button></form>
+      <p class="small muted">Ollie will use it to say hello, and it goes on your certificates. It stays on this device.</p></div>`}
     <div class="tiles four">
       <a class="tile" href="#trophies"><b>${rk.r[1]}</b><span>${esc(rk.r[2])}${rk.next ? `<br><small>${toNext} ⭐ to ${esc(rk.next[2])}</small>` : ''}</span></a>
       <div class="tile"><b><span class="flame">🔥</span> <span class="count" data-n="${st.streak}">${st.streak}</span></b><span>day streak</span></div>
@@ -604,6 +611,10 @@ function vHome() {
     </div>`);
 }
 
+function vMore() {
+  const items = [['#progress', '📈', 'Progress', 'Strong and weak topics, score trend'], ['#history', '🕘', 'History', 'Every activity you have finished'], ['#tips', '💡', 'Exam tips', 'Tricks that add marks'], ['#parent', '🔒', 'Parent view', 'PIN protected summary for grown-ups'], ['#settings', '⚙️', 'Settings', 'Your name, sound, exam date, backup']];
+  page(`<h1>More</h1>${items.map(i => `<a class="card subject" href="${i[0]}"><span class="ico">${i[1]}</span><span style="flex:1"><h3>${i[2]}</h3><span class="muted small">${i[3]}</span></span><span class="go">→</span></a>`).join('')}`);
+}
 // ---- trophy room and certificates
 function vTrophies() {
   const rk = rank(), earned = id => st.badges[id];
@@ -640,7 +651,7 @@ function vCert(id) {
       <p class="muted">${esc(info.how)}</p>
       <div class="cert-foot"><span>${new Date(when + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span><span><b>11+ Explorer</b></span></div>
     </div></div>
-    <div class="row noprint" style="justify-content:center;margin-top:1rem"><button class="btn" data-act="print">🖨 Print certificate</button></div>`);
+    <div class="row noprint" style="justify-content:center;margin-top:1rem">${canPrint() ? '<button class="btn" data-act="print">🖨 Print certificate</button>' : '<p class="muted small">Take a screenshot to save or share your certificate.</p>'}</div>`);
   if (!reduced()) confetti(50);
 }
 
@@ -1002,7 +1013,7 @@ function vParent(note) {
     : n > 60 ? '<b>Mixing it up.</b> Keep learning the remaining topics, two timed tests a week, and a mock paper every fortnight. Use Fix my mistakes after every test.'
     : n >= 0 ? '<b>Exam practice.</b> One mock paper a week under exam conditions, weak-spot tests on other days, and Fix my mistakes after each. Keep sessions short and positive.' : 'The exam date has passed. Update it in Settings if needed.';
   const untouched = SUBJECTS.filter(s => ready(s.id)).map(s => ({ s, n: B(s.id).topics.filter(t => !peek(s.id, t.id)).length, all: B(s.id).topics.length }));
-  page(`<div class="row spread"><h1>🔒 Parent view</h1><div class="row noprint"><button class="btn alt" data-act="print">🖨 Print or save as PDF</button><button class="btn ghost" data-act="lock">Lock</button></div></div>
+  page(`<div class="row spread"><h1>🔒 Parent view</h1><div class="row noprint">${canPrint() ? '<button class="btn alt" data-act="print">🖨 Print or save as PDF</button>' : ''}<button class="btn ghost" data-act="lock">Lock</button></div></div>
     <p class="muted">Summary for ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}. ${countdownHTML()}</p>
     <div class="tiles four"><div class="tile"><b>${wkMins}</b><span>minutes this week</span></div><div class="tile"><b>${wk.length}</b><span>sessions this week</span></div>
       <div class="tile"><b>${wkQ ? Math.round(100 * wkOK / wkQ) + '%' : '–'}</b><span>right this week (${wkQ} questions)</span></div><div class="tile"><b>🔥 ${st.streak}</b><span>day streak</span></div></div>
@@ -1120,7 +1131,7 @@ const ACT = {
     if (ok) S.stars++;
     S.msg = record(it.q, ok, S.mode);
     save(); renderSession();
-    sfx(ok ? 'right' : 'wrong');
+    sfx(ok ? 'right' : 'wrong'); buzz(ok ? 15 : [30, 40, 30]);
     if (S.msg === 'up') { setTimeout(() => sfx('level'), 350); confetti(50); }
     else if (ok) { let k = 0; for (let j = S.idx; j >= 0 && S.items[j].chosen === S.items[j].q.a; j--) k++; if (k && k % 5 === 0) { confetti(40); toast(`🔥 ${k} in a row! You are on fire!`); } }
   },
@@ -1162,6 +1173,12 @@ const ACT = {
     vRevise();
   },
   export: () => {
+    const name = 'eleven-plus-progress-' + today() + '.json', data = JSON.stringify(st);
+    if (isNative()) {
+      const f = new File([data], name, { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) return navigator.share({ files: [f], title: '11+ Explorer backup' }).catch(() => {});
+      if (navigator.clipboard) return navigator.clipboard.writeText(data).then(() => vSettings('Backup copied. Paste it into a note or email to keep it safe.'));
+    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(st)], { type: 'application/json' }));
     a.download = 'eleven-plus-progress-' + today() + '.json';
@@ -1173,6 +1190,7 @@ const ACT = {
   }
 };
 const SUBMIT = {
+  hello: () => { const v = (($('#hello') || {}).value || '').trim().slice(0, 20); if (!v) return; st.settings.name = v; save(); sfx('right'); vHome(); toast(`Nice to meet you, ${v}! 🦉`); },
   setpin: () => { const v = ($('#pin1') || {}).value || ''; if (!/^\d{4,6}$/.test(v)) return vParent('The PIN must be 4 to 6 digits.'); st.settings.pin = hashPin(v); parentOK = true; save(); vParent('PIN saved.'); },
   unlock: () => { const v = ($('#pin2') || {}).value || ''; if (hashPin(v) === st.settings.pin) { parentOK = true; vParent(); } else vParent('That PIN is not right. Try again.'); }
 };
@@ -1214,7 +1232,7 @@ function route() {
   if (h[0] !== 'parent' && h[0] !== 'history') parentOK = false;
   closePop(); if (canSpeak()) speechSynthesis.cancel();
   if (h[0] !== 'session') view().classList.remove('wide');
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === ({ topic: 'learn', lesson: 'learn', session: '', tips: 'tests', cert: 'trophies' }[h[0]] ?? h[0])));
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === h[0] || a.dataset.nav === ({ topic: 'learn', lesson: 'learn', session: '', tips: 'more', cert: 'trophies', progress: 'more', history: 'more', parent: 'more', settings: 'more' }[h[0]] ?? h[0])));
   if (!firstReady()) return page('<div class="card"><h1>No questions found</h1><p>The course data files did not load. Check that the data folder is next to index.html.</p></div>');
   switch (h[0]) {
     case 'learn': h[1] ? vSubject(h[1]) : vLearn(); break;
@@ -1229,6 +1247,7 @@ function route() {
     case 'parent': vParent(); break;
     case 'tips': vTips(); break;
     case 'trophies': vTrophies(); break;
+    case 'more': vMore(); break;
     case 'cert': vCert(decodeURIComponent(h.slice(1).join('/'))); break;
     default: vHome();
   }

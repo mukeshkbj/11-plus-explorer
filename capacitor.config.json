@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.mukeshkbj.elevenplus",
+  "appName": "11+ Explorer",
+  "webDir": "www",
+  "backgroundColor": "#f8f7ff",
+  "ios": { "contentInset": "never" },
+  "android": { "allowMixedContent": false }
+}

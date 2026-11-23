@@ -50,6 +50,24 @@ open 11-plus-explorer/index.html
 - A study plan for the current stage, based on the exam date
 - Print or save as PDF
 
+## Mobile apps (iOS and Android)
+
+The same app is packaged as native iOS and Android apps with [Capacitor](https://capacitorjs.com/).
+
+**Android:** every push to `main` builds an installable `.apk` with GitHub Actions. Open the **Actions** tab, pick the latest "Build Android app" run, and download `11-plus-explorer-android` under Artifacts. Copy the `.apk` to an Android phone and open it (allow "install unknown apps" when asked).
+
+**iPhone and iPad** (needs a Mac with Xcode):
+
+```
+npm install
+npm run build
+npx cap add ios
+npx capacitor-assets generate --ios
+npm run ios          # opens the project in Xcode
+```
+
+In Xcode, choose your Apple ID under Signing & Capabilities, plug in the iPhone and press Run. Publishing to the App Store needs an Apple Developer account. Publishing to Google Play needs a Google Play developer account.
+
 ## Project layout
 
 ```
