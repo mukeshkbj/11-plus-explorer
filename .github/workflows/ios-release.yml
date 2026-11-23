@@ -1,0 +1,52 @@
+# Builds the iPhone and iPad app and uploads it to App Store Connect (then TestFlight).
+# Run it from the Actions tab ("Run workflow"), or push a tag such as v1.0.0.
+# Needs these repository secrets (Settings → Secrets and variables → Actions):
+#   APPLE_TEAM_ID       your 10-character Team ID (developer.apple.com → Membership)
+#   ASC_KEY_ID          App Store Connect API key ID
+#   ASC_ISSUER_ID       App Store Connect issuer ID
+#   ASC_KEY_P8_BASE64   the .p8 key file, base64 encoded
+name: iOS release (App Store)
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build
+      - run: '[ -d ios ] || npx cap add ios'
+      - run: npx capacitor-assets generate --ios --iconBackgroundColor "#ffd43b" --splashBackgroundColor "#f8f7ff"
+      - run: npx cap sync ios
+      - name: App settings (no special encryption, so no export questions on each upload)
+        run: /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" ios/App/App/Info.plist || true
+      - name: Archive and upload
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          echo "${{ secrets.ASC_KEY_P8_BASE64 }}" | base64 -d > $RUNNER_TEMP/AuthKey.p8
+          VERSION=$(node -p "require('./package.json').version")
+          if [ -d ios/App/App.xcworkspace ]; then TARGET="-workspace ios/App/App.xcworkspace"; else TARGET="-project ios/App/App.xcodeproj"; fi
+          AUTH="-allowProvisioningUpdates -authenticationKeyPath $RUNNER_TEMP/AuthKey.p8 -authenticationKeyID $KEY_ID -authenticationKeyIssuerID $ISSUER"
+          xcodebuild $TARGET -scheme App -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath $RUNNER_TEMP/App.xcarchive archive \
+            DEVELOPMENT_TEAM=$TEAM CODE_SIGN_STYLE=Automatic PRODUCT_BUNDLE_IDENTIFIER=io.github.mukeshkbj.elevenplus \
+            MARKETING_VERSION=$VERSION CURRENT_PROJECT_VERSION=${{ github.run_number }} $AUTH
+          cat > $RUNNER_TEMP/export.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>signingStyle</key><string>automatic</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath $RUNNER_TEMP/App.xcarchive -exportOptionsPlist $RUNNER_TEMP/export.plist -exportPath $RUNNER_TEMP/out $AUTH

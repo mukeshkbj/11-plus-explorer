@@ -1598,7 +1598,7 @@ function vSettings(note) {
       <div class="row"><button class="btn alt" data-act="export">Save a backup file</button><label class="btn alt" style="margin:0">Restore from a backup<input type="file" accept="application/json,.json" data-change="import" hidden></label></div></div>
     <div class="card"><h3>Start again</h3><p class="muted small">This clears all stars, history and progress on this device.</p>
       <button class="btn warn" data-act="reset">${resetArmed ? 'Press again to clear everything' : 'Clear all progress'}</button></div>
-    <p class="muted small">No personal details are collected and nothing leaves this device.</p>`);
+    <p class="muted small">No personal details are collected and nothing leaves this device unless a parent turns on AI questions or sync. <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>`);
 }
 
 // ---------------------------------------------------------------- actions

@@ -78,7 +78,9 @@ npx capacitor-assets generate --ios
 npm run ios          # opens the project in Xcode
 ```
 
-In Xcode, choose your Apple ID under Signing & Capabilities, plug in the iPhone and press Run. Publishing to the App Store needs an Apple Developer account. Publishing to Google Play needs a Google Play developer account.
+In Xcode, choose your Apple ID under Signing & Capabilities, plug in the iPhone and press Run.
+
+**Publishing to Google Play and the App Store:** signed release workflows, store listing text, privacy answers and a step-by-step checklist are in [docs/STORE.md](docs/STORE.md). The privacy policy is at [privacy.html](https://mukeshkbj.github.io/11-plus-explorer/privacy.html).
 
 ## Project layout
 
