@@ -594,4 +594,5 @@ function fromId(id) { const m = /^g-nvr-([a-z_0-9]+)-(\d)-(\d+)$/.exec(id); retu
 // A batch of new questions for one topic: n at each level.
 function batch(topic, n) { const out = []; for (let d = 1; d <= 3; d++) for (let i = 0; i < n; i++) { const q = make(topic, d, Math.floor(Math.random() * 1e9)); if (q) out.push(q); } return out; }
 window.NVRGEN = { topics: Object.keys(GEN), make, fromId, batch, _fold: fold, _nets: NETS };
+window.GENS = window.GENS || {}; window.GENS.nvr = window.NVRGEN;
 })();

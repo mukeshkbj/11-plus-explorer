@@ -87,15 +87,18 @@ let st = load();
 // ---------------------------------------------------------------- question bank
 const B = id => (window.BANK || {})[id];
 const ready = id => !!(B(id) && B(id).questions && B(id).questions.length);
-// Fresh non-verbal reasoning puzzles are drawn each time the app opens (12 per level per topic).
-if (window.NVRGEN && ready('nvr')) window.NVRGEN.topics.forEach(t => { B('nvr').questions.push(...window.NVRGEN.batch(t, 12)); });
+// Fresh generated questions are added each time the app opens: non-verbal reasoning puzzles, maths and verbal reasoning.
+const GEN_PER_LEVEL = { nvr: 12, maths: 8, vr: 8 };
+Object.keys(window.GENS || {}).forEach(sid => { if (!ready(sid)) return; const g = window.GENS[sid]; g.topics.forEach(t => { if (B(sid).topics.some(x => x.id === t)) B(sid).questions.push(...g.batch(t, GEN_PER_LEVEL[sid] || 6)); }); });
 const QIraw = {};
 SUBJECTS.forEach(s => { if (ready(s.id)) B(s.id).questions.forEach(q => { q.subject = s.id; QIraw[q.id] = q; }); });
 // Generated puzzles from earlier sessions are rebuilt from their id when history or revision needs them.
 const QI = new Proxy(QIraw, { get: (t, k) => {
-  if (t[k] || typeof k !== 'string' || !k.startsWith('g-nvr-') || !window.NVRGEN) return t[k];
-  const q = window.NVRGEN.fromId(k); if (q) { q.subject = 'nvr'; t[k] = q; }
-  return q || undefined;
+  if (t[k] || typeof k !== 'string') return t[k];
+  const m = /^g-([a-z]+)-/.exec(k), g = m && window.GENS && window.GENS[m[1]];
+  if (g) { const q = g.fromId(k); if (q) { q.subject = m[1]; t[k] = q; } return q || undefined; }
+  if (k.startsWith('ai-') && st.aiq && st.aiq[k]) return (t[k] = st.aiq[k]);
+  return undefined;
 } });
 const firstReady = () => (SUBJECTS.find(s => ready(s.id)) || {}).id;
 const subj = id => SUBJECTS.find(s => s.id === id);
@@ -134,7 +137,7 @@ function randomFresh(list, k, exclude, recent) {
 }
 const pool = (sid, tid, d) => B(sid).questions.filter(q => q.topic === tid && (!d || q.d === d));
 // Reading passages: questions that share a passage are kept together in one sitting.
-const passages = sid => B(sid).passages || {};
+const passages = sid => Object.assign({}, B(sid).passages || {}, (st.aip && st.aip[sid]) || {});
 const isPassageTopic = (sid, tid) => pool(sid, tid).some(q => q.p);
 const bankOrder = (sid, qs) => { const all = B(sid).questions; return qs.slice().sort((a, b) => all.indexOf(a) - all.indexOf(b)); };
 function pickPassage(sid, tid, level) {
@@ -329,7 +332,7 @@ function begin(mode, sid, tid, questions, extra) {
 // ---- keeping the place: the activity in progress is saved, so leaving the page or closing the app never loses it
 function persist() {
   if (!S) { if (st.active) { delete st.active; save(); } return; }
-  const keep = ['mode', 'subject', 'topic', 'idx', 'start', 'stars', 'target', 'pid', 'parts', 'part', 'partStart', 'deadline', 'elapsed', 'between', 'label', 'cfg', 'tags', 'from', 'warned'];
+  const keep = ['mode', 'subject', 'topic', 'idx', 'start', 'stars', 'target', 'pid', 'parts', 'part', 'partStart', 'deadline', 'elapsed', 'between', 'label', 'cfg', 'tags', 'from', 'warned', 'hard', 'ai'];
   const a = {}; keep.forEach(k => { if (S[k] !== undefined) a[k] = S[k]; });
   a.flags = [...S.flags];
   a.items = S.items.map(i => ({ id: i.q.id, perm: i.q.perm || null, c: i.chosen, s: i.secs || 0, say: i.say || null }));
@@ -403,15 +406,15 @@ const plainTopics = sid => B(sid).topics.filter(t => !isPassageTopic(sid, t.id))
 const textTopics = sid => B(sid).topics.filter(t => isPassageTopic(sid, t.id)).map(t => t.id);
 // A fresh random paper: topics shared out evenly, a fixed mix of difficulty
 // (about 30% warm-up, 45% stretch, 25% challenge), questions from recent papers avoided, easier ones first.
-function pickSpread(sid, topicIds, count, used, recent) {
+function pickSpread(sid, topicIds, count, used, recent, only) {
   const topics = shuffle(topicIds.filter(t => pool(sid, t).length)), qs = [];
   if (!topics.length || count <= 0) return qs;
   recent = recent || recentTested();
   const easy = Math.round(count * 0.3), hard = Math.round(count * 0.25);
-  const ds = shuffle(Array.from({ length: count }, (_, i) => i < easy ? 1 : i < count - hard ? 2 : 3));
+  const ds = only ? Array(count).fill(only) : shuffle(Array.from({ length: count }, (_, i) => i < easy ? 1 : i < count - hard ? 2 : 3));
   for (let i = 0; qs.length < count && i < count * 6; i++) {
     const t = topics[i % topics.length], d = ds[qs.length];
-    const q = randomFresh(pool(sid, t, d), 1, used, recent)[0] || randomFresh(pool(sid, t), 1, used, recent)[0];
+    const q = randomFresh(pool(sid, t, d), 1, used, recent)[0] || (only ? randomFresh(pool(sid, t, Math.max(1, only - 1)), 1, used, recent)[0] : randomFresh(pool(sid, t), 1, used, recent)[0]);
     if (q) { qs.push(q); used.add(q.id); }
   }
   return qs.sort((a, b) => a.d - b.d);
@@ -507,6 +510,165 @@ function startFix(eid) {
   });
   begin('fix', e.subject, null, qs, { tags, from: eid });
 }
+// ---------------------------------------------------------------- Challenge practice (hard questions only)
+function startChallenge(sid, tid) {
+  let qs;
+  if (isPassageTopic(sid, tid)) { const pid = pickPassage(sid, tid, 3); qs = bankOrder(sid, pool(sid, tid).filter(q => q.p === pid && q.d >= 2)).slice(0, 10); }
+  else qs = randomFresh(pool(sid, tid, 3), 10);
+  if (!qs.length) return toast('No challenge questions for this topic yet.');
+  begin('exercise', sid, tid, qs, { target: qs.length, hard: true, label: 'Challenge', cfg: { k: 'challenge', sid, tid } });
+}
+function startHardTest(sid) {
+  const used = new Set(), qs = pickSpread(sid, plainTopics(sid), paceCount(), used, recentTested(), 3);
+  timedSession('test', sid, B(sid).name + ' challenge test', [{ name: B(sid).name + ' (hard)', mins: 10, qs }], { k: 'hard', sid });
+}
+
+// ---------------------------------------------------------------- AI-made questions (optional, uses the family's own API key)
+// The key is kept only in this browser (separately from progress, so it is never in a backup file) and is sent only to the AI company chosen.
+const AIKEY = 'elevenplus.ai';
+function aiConf() { try { return JSON.parse(localStorage.getItem(AIKEY)) || null; } catch (e) { return null; } }
+function aiStore(c) { try { if (c) localStorage.setItem(AIKEY, JSON.stringify(c)); else localStorage.removeItem(AIKEY); } catch (e) { /* storage blocked */ } }
+const aiReady = () => { const c = aiConf(); return !!(c && c.key && c.model); };
+const AI_MODELS = [['claude-sonnet-5-5', 'Claude Sonnet 5.5 (recommended)'], ['claude-haiku-5-5', 'Claude Haiku 5.5 (faster, lower cost)'], ['claude-opus-5-5', 'Claude Opus 5.5 (most careful, higher cost)']];
+const AI_SCHEMA = { type: 'object', properties: {
+  passage: { type: 'object', properties: { title: { type: 'string' }, kind: { type: 'string', enum: ['story', 'nonfiction', 'poem'] }, text: { type: 'string' } } },
+  questions: { type: 'array', items: { type: 'object', properties: { q: { type: 'string' }, opts: { type: 'array', items: { type: 'string' } }, a: { type: 'integer' }, hint: { type: 'string' }, steps: { type: 'array', items: { type: 'string' } }, d: { type: 'integer' }, topic: { type: 'string' } }, required: ['q', 'opts', 'a', 'hint', 'steps'] } } },
+  required: ['questions'] };
+function aiError(status, body) {
+  if (status === 401 || status === 403) return 'The API key was not accepted. Check it in the parent view.';
+  if (status === 429) return 'The AI service is busy or the account has run out of credit. Try again in a minute, or check the account.';
+  if (status === 404 || /model/i.test(body || '')) return 'That AI model was not found for this key. Pick another model in the parent view.';
+  if (status >= 500) return 'The AI service had a problem. Please try again shortly.';
+  return 'The AI request did not work' + (status ? ` (error ${status})` : '') + '.';
+}
+async function aiRequest(prompt, maxTokens) {
+  const c = aiConf(); if (!c || !c.key) throw new Error('No AI key has been added yet. A grown-up can add one in the parent view.');
+  let res;
+  try {
+    if (c.provider === 'openai') {
+      res = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key },
+        body: JSON.stringify({ model: c.model, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'You write 11+ practice questions. Reply with one JSON object only.' }, { role: 'user', content: prompt + '\n\nReply with JSON in this shape: {"passage": {"title": "", "kind": "story", "text": ""} (only when asked for a passage), "questions": [{"q": "", "opts": ["", "", "", "", ""], "a": 0, "hint": "", "steps": [""], "d": 2, "topic": ""}]}' }] }) });
+    } else {
+      res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': c.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: c.model, max_tokens: maxTokens || 12000, tools: [{ name: 'save_questions', description: 'Save the finished, checked questions.', input_schema: AI_SCHEMA }], tool_choice: { type: 'tool', name: 'save_questions' }, messages: [{ role: 'user', content: prompt }] }) });
+    }
+  } catch (e) { throw new Error('Could not reach the AI service. Check the internet connection and try again.'); }
+  const text = await res.text();
+  if (!res.ok) throw new Error(aiError(res.status, text));
+  let data; try { data = JSON.parse(text); } catch (e) { throw new Error('The AI sent back something unexpected. Please try again.'); }
+  if (c.provider === 'openai') { try { return JSON.parse(data.choices[0].message.content); } catch (e) { throw new Error('The AI answer could not be read. Please try again.'); } }
+  const block = (data.content || []).find(b => b.type === 'tool_use');
+  if (!block) throw new Error('The AI answer could not be read. Please try again.');
+  return block.input;
+}
+const LEVEL_WORDS = { 1: 'warm-up (gentle, single step)', 2: 'stretch (standard 11+ level, often two steps)', 3: 'challenge (the hardest 11+ questions, several steps or tricky wording)', mixed: 'a mix: about 30% warm-up, 45% stretch and 25% challenge, in order from easiest to hardest' };
+function aiPrompt(o) {
+  const subjectName = B(o.sid).name, tops = o.tids.map(id => topicOf(o.sid, id)).filter(Boolean);
+  return `You are writing practice questions for a child in Year 5 or 6 (age 9 to 11) in England who is preparing for the 11+ exam (the Kent Test, GL Assessment style). Use UK English spelling, pounds and pence, and metric units.
+
+Subject: ${subjectName}.
+Topic${tops.length > 1 ? 's (spread the questions across them and set "topic" to the topic id)' : ''}:
+${tops.map(t => `- ${t.id}: ${t.name}. ${t.lesson.text.split('\n')[0]}`).join('\n')}
+${o.passage ? `\nFirst write an original ${o.passage} of about 250 to 350 words for this age group, with a short title. Number nothing. Then write the questions about it (inference, vocabulary in context, the writer's choices, and finding information).` : ''}
+Write ${o.n} multiple-choice questions. Difficulty: ${LEVEL_WORDS[o.level]}.
+
+Rules for every question:
+- Exactly 5 options and exactly one correct answer. "a" is the index (0 to 4) of the correct option.
+- Wrong options are believable mistakes a child might make, never silly.
+- Never refer to options by letter (A, B, C), because the options are shuffled.
+- Put any puzzle (letters, numbers, a sum, a word group) on its own line inside "q".
+- Write fractions like 3/4. Use the × and ÷ signs.
+- "hint": one short sentence that nudges without giving the answer away.
+- "steps": 2 to 4 short, friendly steps showing a method a 10-year-old can follow. The last step must be exactly "The answer is X." where X is the correct option, word for word.
+- "d": 1 for warm-up, 2 for stretch, 3 for challenge.
+- Every question must be different, original, and suitable for children. Use kind, varied names and everyday situations.
+- Work every answer out a second time before you finish. If you are not completely sure a question has exactly one right answer, replace it.`;
+}
+// Keeps only well-formed questions whose last step matches the marked answer (a check that the AI did not mix itself up).
+function aiClean(raw, o) {
+  const out = [], stamp = Date.now().toString(36);
+  (raw && Array.isArray(raw.questions) ? raw.questions : []).forEach((x, i) => {
+    if (!x || typeof x.q !== 'string' || !Array.isArray(x.opts) || x.opts.length !== 5) return;
+    const opts = x.opts.map(v => String(v).trim()), a = Number(x.a);
+    if (new Set(opts).size !== 5 || !(a >= 0 && a <= 4) || opts.some(v => !v)) return;
+    let steps = (Array.isArray(x.steps) ? x.steps : []).map(v => String(v).trim()).filter(Boolean);
+    if (!steps.length) return;
+    const last = steps[steps.length - 1];
+    if (/answer is/i.test(last)) { if (!last.toLowerCase().includes(opts[a].toLowerCase().replace(/\.$/, ''))) return; }
+    else steps.push(`The answer is ${opts[a]}.`);
+    const tid = o.tids.includes(x.topic) ? x.topic : o.tids[0];
+    out.push({ id: `ai-${o.sid}-${stamp}-${i}-${Math.floor(Math.random() * 1e5)}`, subject: o.sid, topic: tid, d: [1, 2, 3].includes(+x.d) ? +x.d : (o.level === 'mixed' ? 2 : o.level), q: x.q.trim(), opts, a, hint: String(x.hint || 'Read the question carefully.'), steps, ai: true });
+  });
+  return out;
+}
+// Saves AI questions (and any passage) so they can be reviewed, revised and resumed later. Only the newest 400 are kept.
+function aiKeep(qs, passage, sid) {
+  st.aiq = st.aiq || {};
+  let pid = null;
+  if (passage && passage.text) {
+    pid = 'aip-' + Date.now().toString(36);
+    st.aip = st.aip || {}; st.aip[sid] = st.aip[sid] || {};
+    st.aip[sid][pid] = { title: String(passage.title || 'Passage'), kind: passage.kind === 'poem' ? 'poem' : 'prose', text: String(passage.text) };
+    const ids = Object.keys(st.aip[sid]); if (ids.length > 20) delete st.aip[sid][ids[0]];
+  }
+  qs.forEach(q => { if (pid) q.p = pid; st.aiq[q.id] = q; QI[q.id] = q; });
+  const ids = Object.keys(st.aiq); if (ids.length > 400) ids.slice(0, ids.length - 400).forEach(id => delete st.aiq[id]);
+  save();
+  return qs;
+}
+async function aiMake(o) {
+  const raw = await aiRequest(aiPrompt(o), o.n > 15 ? 16000 : 9000);
+  const qs = aiClean(raw, o);
+  if (qs.length < Math.max(3, Math.floor(o.n * 0.6))) throw new Error('The AI did not write enough good questions this time. Please try again.');
+  if (o.passage && !(raw.passage && raw.passage.text)) throw new Error('The AI forgot to write the passage. Please try again.');
+  return aiKeep(qs.slice(0, o.n), o.passage ? raw.passage : null, o.sid);
+}
+let aiBusy = false;
+function aiWaiting(what) {
+  page(`<div class="card" style="text-align:center;padding:2rem 1rem">${buddy(`<b>Ollie is writing ${esc(what)} for you…</b><br>This can take up to a minute. Please keep this page open.`, 'happy')}<div class="spinner" aria-hidden="true"></div></div>`);
+}
+async function aiRun(what, job) {
+  if (aiBusy) return; aiBusy = true;
+  aiWaiting(what);
+  try { await job(); }
+  catch (e) { page(`<div class="card">${buddy(`<b>Oops, that did not work.</b><br>${esc(e.message || 'Something went wrong.')}`)}<div class="row" style="margin-top:1rem"><button class="btn" onclick="history.back()">Go back</button>${location.hash === '#parent' ? '' : '<a class="btn alt" href="#parent">Check AI settings</a>'}</div></div>`); }
+  finally { aiBusy = false; }
+}
+function aiExercise(sid, tid, level) {
+  const t = topicOf(sid, tid), passage = isPassageTopic(sid, tid);
+  const kind = tid === 'comp_poetry' ? 'poem' : tid === 'comp_nonfiction' ? 'non-fiction article' : tid === 'cloze' ? 'story with numbered gaps written like (1), (2) where a word is missing; each question asks which word fills one gap' : 'story';
+  aiRun(`10 new ${t.name} questions`, async () => {
+    const qs = await aiMake({ sid, tids: [tid], n: passage ? 8 : 10, level: +level || 2, passage: passage ? kind : null });
+    if (S) finish(false);
+    begin('exercise', sid, tid, qs, { target: qs.length, ai: true, label: 'AI practice', cfg: { k: 'aiex', sid, tid, level: +level || 2 } });
+  });
+}
+const AIMOCK = {
+  maths: { name: 'AI Maths paper', parts: ['maths'] },
+  english: { name: 'AI English paper', parts: ['english'] },
+  vr: { name: 'AI Verbal reasoning paper', parts: ['vr'] },
+  full: { name: 'AI complete mock exam', parts: ['english', 'maths', 'vr', 'nvr', 'spatial'] }
+};
+function aiMock(kind) {
+  const m = AIMOCK[kind]; if (!m) return;
+  aiRun(`a brand new ${m.name.replace('AI ', '')}`, async () => {
+    const recent = recentTested();
+    const jobs = m.parts.map(async p => {
+      if (p === 'maths') return { name: 'Maths', mins: scaled(25), qs: (await aiMake({ sid: 'maths', tids: plainTopics('maths'), n: 25, level: 'mixed' })).sort((a, b) => a.d - b.d) };
+      if (p === 'vr') return { name: 'Verbal reasoning', mins: scaled(20), qs: (await aiMake({ sid: 'vr', tids: plainTopics('vr'), n: 24, level: 'mixed' })).sort((a, b) => a.d - b.d) };
+      if (p === 'english') {
+        const [text, rest] = await Promise.all([aiMake({ sid: 'english', tids: ['comp_fiction'], n: 10, level: 'mixed', passage: 'story' }), aiMake({ sid: 'english', tids: ['spelling', 'punctuation', 'grammar', 'vocabulary', 'synonyms_antonyms', 'sentence_completion'], n: 14, level: 'mixed' })]);
+        return { name: 'English', mins: scaled(25), qs: text.concat(rest.sort((a, b) => a.d - b.d)) };
+      }
+      return mockSection(p, recent);   // non-verbal and spatial reasoning come from the puzzle engine
+    });
+    const secs = await Promise.all(jobs);
+    if (kind === 'full') secs[2].rest = true;
+    if (S) finish(false);
+    timedSession('mock', kind === 'full' ? 'mix' : m.parts[0], m.name, secs, { k: 'aimock', kind });
+  });
+}
+
 // "Generate a new test" on the results page: the same kind of paper, freshly picked.
 function regenerate(cfg) {
   if (!cfg) return;
@@ -514,6 +676,10 @@ function regenerate(cfg) {
   else if (cfg.k === 'mix') startMix(cfg.kind);
   else if (cfg.k === 'mock') startMock(cfg.kind);
   else if (cfg.k === 'focus') startFocus(cfg.scope);
+  else if (cfg.k === 'challenge') startChallenge(cfg.sid, cfg.tid);
+  else if (cfg.k === 'hard') startHardTest(cfg.sid);
+  else if (cfg.k === 'aiex') aiExercise(cfg.sid, cfg.tid, cfg.level);
+  else if (cfg.k === 'aimock') aiMock(cfg.kind);
 }
 function startRevision() {
   const ids = shuffle(dueList()).slice(0, 15);
@@ -733,7 +899,11 @@ function vTopic(sid, tid) {
       <div class="card"><h3>1. Lesson</h3><p class="muted small">${t.extra ? 'Planning tips, writing prompts and a checklist.' : 'A short explanation with a worked example.'}</p><a class="btn alt" href="#lesson/${sid}/${tid}">Read the lesson</a></div>
       <div class="card"><h3>2. Exercise</h3><p class="muted small">No timer. Hints and full explanations.</p>${here('exercise') ? `<button class="btn" data-act="exercise" data-sid="${sid}" data-tid="${tid}">Continue: question ${sessionWhere().num} of ${sessionWhere().total} →</button><button class="btn ghost" style="margin-top:.5rem" data-act="restartex" data-sid="${sid}" data-tid="${tid}">Start a new set</button>` : `<button class="btn" data-act="exercise" data-sid="${sid}" data-tid="${tid}">Start practising</button>`}</div>
       <div class="card"><h3>3. Quiz</h3><p class="muted small">10 questions. Score 8 or more to earn the topic star.</p><button class="btn alt" data-act="quiz" data-sid="${sid}" data-tid="${tid}">${here('quiz') ? `Continue quiz: question ${sessionWhere().num} of ${sessionWhere().total} →` : 'Take the quiz'}</button></div>
-    </div>`);
+      <div class="card hardcard"><h3>4. 🔥 Challenge</h3><p class="muted small">Only the hardest questions, for when you feel ready. No timer, hints allowed.</p><button class="btn alt" data-act="challenge" data-sid="${sid}" data-tid="${tid}">${S && S.hard && S.subject === sid && S.topic === tid ? `Continue: question ${sessionWhere().num} of ${sessionWhere().total} →` : 'Take the challenge'}</button></div>
+    </div>
+    ${sid !== 'nvr' && !t.extra ? (aiReady() ? `<div class="card aicard"><h3>✨ AI practice</h3><p class="muted small">Ten brand-new questions on ${esc(t.name)}, written by AI just for you. Choose a level:</p>
+      <div class="row">${[1, 2, 3].map(l => `<button class="btn ${l === (s ? s.level : 1) ? '' : 'alt'}" data-act="aiex" data-sid="${sid}" data-tid="${tid}" data-l="${l}">${LEVEL[l]}</button>`).join('')}</div></div>`
+      : `<p class="small muted">✨ Want endless new questions written by AI? A grown-up can add an AI key in the <a href="#parent">parent view</a>.</p>`) : ''}`);
 }
 
 function vLesson(sid, tid) {
@@ -766,6 +936,10 @@ function vTests() {
     <div class="box eg small">🎲 <b>Every test is new.</b> Questions are picked at random and answers are shuffled, and questions from your recent tests are kept out. When you finish you can generate another one straight away. <a href="#tips">Read the exam tips →</a></div>
     ` + fold('t-weak', '<span class="ft">🎯 Weak-spot test</span>', weak.length ? card('🎯 My weak spots', `${count} questions on ${tried ? 'the topics you find hardest right now' : 'four topics to get you started'}: ${weak.map(w => esc(w.name)).join(', ')}.`, 'focus', 'data-scope="all"', 'Start') : '', true) +
     fold('t-one', '<span class="ft">⏱️ 10-minute tests: one subject</span>', SUBJECTS.filter(s => ready(s.id)).map(s => card(`${s.icon} ${esc(s.name)}`, `${count} questions from across the subject.`, 'test', `data-sid="${s.id}"`, 'Start')).join(''), true) +
+    fold('t-hard', '<span class="ft">🔥 Challenge tests: hard questions only</span>', SUBJECTS.filter(s => ready(s.id)).map(s => card(`${s.icon} ${esc(s.name)} challenge`, `${count} of the hardest questions, 10 minutes. For when you are flying!`, 'hardtest', `data-sid="${s.id}"`, 'Start')).join(''), false) +
+    fold('t-ai', '<span class="ft">✨ AI-made papers</span>', aiReady() ? `<p class="muted small">Brand-new papers written by AI each time. Non-verbal reasoning sections come from the puzzle engine. Writing a paper takes up to a minute.</p>` +
+      Object.keys(AIMOCK).map(k => card(`✨ ${esc(AIMOCK[k].name)}`, k === 'full' ? 'English, Maths and Verbal reasoning written by AI, plus Non-verbal and Spatial reasoning. Allow about two hours.' : 'A full-length timed paper, freshly written.', 'aimock', `data-kind="${k}"`, 'Write it')).join('')
+      : `<div class="card"><p class="small">A grown-up can add an AI key in the <a href="#parent">parent view</a> to unlock brand-new AI-written exercises and mock papers.</p></div>`, false) +
     fold('t-mix', '<span class="ft">🔀 10-minute tests: mixed</span>', Object.keys(MIXES).filter(k => MIXES[k].sids.filter(ready).length > 1).map(k => card(`🔀 ${esc(MIXES[k].name)}`, `${count} questions, shared between the subjects.`, 'mix', `data-kind="${k}"`, 'Start')).join(''), false) +
     fold('t-mock', '<span class="ft">📝 Mock exams</span>', `<p class="muted small">Full-length papers laid out like the real test. Each section has its own clock, and you cannot go back to a section once it is finished. Find a quiet table before you start.</p>` +
       ['english', 'maths', 'reasoning'].filter(mockReady).map(k => card(`📝 ${esc(MOCKS[k].name)}`, info(k) + (k === 'reasoning' ? ' · three sections: verbal, non-verbal and spatial' : ''), 'mock', `data-kind="${k}"`, 'Start paper')).join('') +
@@ -820,13 +994,13 @@ function renderSession() {
   const where = part ? part.name + (S.parts.length > 1 ? ` · section ${S.part + 1} of ${S.parts.length}` : '') : S.topic ? t.name : S.mode === 'fix' ? 'Second chances' : 'Mixed topics';
   const tag = S.tags && S.tags[q.id];
   const helpful = S.mode === 'exercise' || S.mode === 'fix' || S.mode === 'quiz' || S.mode === 'revision';
-  let h = `<div class="sess-head"><div><span class="pill">${esc(S.label && part ? S.label : MODE[S.mode])}</span> <span class="muted">${esc(where)}</span></div>
+  let h = `<div class="sess-head"><div><span class="pill ${S.hard ? 'hardp' : S.ai ? 'aip' : ''}">${S.hard ? '🔥 Challenge' : S.ai ? '✨ AI practice' : esc(S.label && part ? S.label : MODE[S.mode])}</span> <span class="muted">${esc(where)}</span></div>
     <div class="row">${part ? '<span id="clock" class="clock" aria-label="Time left"></span>' : ''}<button class="btn ghost" data-act="finish">${endWord}</button></div></div>
     ${part ? '<div id="pace" class="pace" aria-live="polite"></div>' : ''}
     <div class="prog"><div style="width:${Math.round(100 * (fb ? answered : num) / total)}%"></div></div>
     <div class="${q.p ? 'split' : ''}">${passageHTML(q, true)}
     <div class="card" id="qcard" data-qid="${q.id}"><div class="row spread"><div class="qnum">Question ${num} of ${total}${S.mode === 'exercise' || S.mode === 'fix' ? ' · ' + LEVEL[q.d] : ''}${!S.topic && fb ? ' · ' + esc(t.name) : ''}
-      ${tag === 'again' ? ' <span class="pill gold">Second chance</span>' : tag === 'twin' ? ' <span class="pill">Similar question</span>' : ''}${part && S.flags.has(S.idx) ? ' <span class="pill flagp">🚩 Flagged</span>' : ''}</div>
+      ${tag === 'again' ? ' <span class="pill gold">Second chance</span>' : tag === 'twin' ? ' <span class="pill">Similar question</span>' : ''}${part && S.flags.has(S.idx) ? ' <span class="pill flagp">🚩 Flagged</span>' : ''}${q.ai ? ' <span class="pill aip">✨ AI-made</span>' : ''}</div>
       <div class="row tools">${helpful && canSpeak() ? '<button class="btn ghost" data-act="speak" data-sel="#qcard .qtext,#qcard .opts" aria-label="Read the question aloud">🔊 Read to me</button>' : ''}
       ${part ? `<button class="btn ghost ${S.flags.has(S.idx) ? 'on' : ''}" data-act="flag">${S.flags.has(S.idx) ? '🚩 Unflag' : '🚩 Flag to check later'}</button>` : ''}</div></div>
     <div class="qtext">${rich(q.q)}</div>${q.svg ? `<div class="fig">${q.svg}</div>` : ''}
@@ -902,7 +1076,7 @@ function vResult(id, done) {
   const br = topicBreakdown(e);
   const perQ = e.total ? Math.round(e.secs / e.total) : 0, target = e.mins ? Math.round(e.mins * 60 / e.total) : 0;
   const actions = [];
-  if (e.cfg) actions.push(`<button class="btn" data-act="again" data-id="${e.id}">🔄 Generate a new test</button>`);
+  if (e.cfg) actions.push(`<button class="btn" data-act="again" data-id="${e.id}">${['challenge', 'aiex'].includes(e.cfg.k) ? '🔄 New set of questions' : e.cfg.k === 'aimock' ? '✨ Write another paper' : '🔄 Generate a new test'}</button>`);
   if (wrong) actions.push(`<button class="btn ${e.cfg ? 'alt' : ''}" data-act="fix" data-id="${e.id}">🔧 Fix my mistakes (${wrong})</button>`);
   if (done && t) actions.push(`<button class="btn alt" data-act="${e.mode === 'quiz' ? 'quiz' : 'exercise'}" data-sid="${e.subject}" data-tid="${e.topic}">${e.mode === 'quiz' ? 'Try the quiz again' : 'Keep practising'}</button>`);
   if (done && t && e.mode === 'exercise') actions.push(`<button class="btn alt" data-act="quiz" data-sid="${e.subject}" data-tid="${e.topic}">Take the quiz</button>`);
@@ -1064,6 +1238,23 @@ function lessonPop(sid, tid) {
   d.querySelector('[data-act=closepop]').focus();
 }
 
+// Parent settings for AI-made questions.
+function aiCard() {
+  const c = aiConf() || { provider: 'anthropic', model: AI_MODELS[0][0] }, prov = c.provider || 'anthropic';
+  const masked = c.key ? c.key.slice(0, 7) + '…' + c.key.slice(-4) : '';
+  return `<div class="card noprint" id="aiset"><h3>✨ AI-made questions (optional)</h3>
+    <p class="small">Add your own AI API key and the app can write brand-new exercises (for Maths, English and Verbal Reasoning) and full mock papers. The key is stored only on this device, is never included in backup files, and is sent only to the AI company you choose. Each request uses your account's credit, so check your provider's prices.</p>
+    <p class="small muted">AI can occasionally get an answer wrong. The app checks that each question's working matches its marked answer and drops any that do not, and AI questions are labelled ✨ so you can spot them.</p>
+    <form data-submit="aisave">
+      <label for="aiprov">AI company</label><select id="aiprov" data-change="aiprov"><option value="anthropic" ${prov === 'anthropic' ? 'selected' : ''}>Anthropic (Claude)</option><option value="openai" ${prov === 'openai' ? 'selected' : ''}>OpenAI</option></select>
+      <label for="aimodel" style="margin-top:.7rem">Model</label>
+      ${prov === 'anthropic' ? `<select id="aimodel">${AI_MODELS.map(m => `<option value="${m[0]}" ${c.model === m[0] ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select>` : `<input id="aimodel" class="inp" type="text" value="${esc(c.model || '')}" placeholder="Type the model name from your OpenAI account" autocomplete="off">`}
+      <label for="aikey" style="margin-top:.7rem">API key ${masked ? `<span class="muted small">(saved: ${esc(masked)})</span>` : ''}</label>
+      <input id="aikey" class="inp" type="password" autocomplete="off" placeholder="${masked ? 'Leave blank to keep the saved key' : prov === 'anthropic' ? 'sk-ant-…' : 'sk-…'}" style="width:100%">
+      <div class="row" style="margin-top:.8rem"><button class="btn" type="submit">Save</button>${c.key ? '<button class="btn alt" type="button" data-act="aitest">Test the key</button><button class="btn ghost" type="button" data-act="airemove">Remove key</button>' : ''}</div>
+    </form>
+    <p class="small muted">Get a Claude key at console.anthropic.com, or an OpenAI key at platform.openai.com. Treat it like a password.</p></div>`;
+}
 const hashPin = p => { let h = 7; for (const c of String(p)) h = (h * 31 + c.charCodeAt(0)) % 1000000007; return 'p' + h; };
 let parentOK = false;
 function vParent(note) {
@@ -1090,6 +1281,7 @@ function vParent(note) {
   const untouched = SUBJECTS.filter(s => ready(s.id)).map(s => ({ s, n: B(s.id).topics.filter(t => !peek(s.id, t.id)).length, all: B(s.id).topics.length }));
   page(`<div class="row spread"><h1>🔒 Parent view</h1><div class="row noprint">${canPrint() ? '<button class="btn alt" data-act="print">🖨 Print or save as PDF</button>' : ''}<button class="btn ghost" data-act="lock">Lock</button></div></div>
     <p class="muted">Summary for ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}. ${countdownHTML()}</p>
+    ${msg}
     <div class="tiles four"><div class="tile"><b>${wkMins}</b><span>minutes this week</span></div><div class="tile"><b>${wk.length}</b><span>sessions this week</span></div>
       <div class="tile"><b>${wkQ ? Math.round(100 * wkOK / wkQ) + '%' : '–'}</b><span>right this week (${wkQ} questions)</span></div><div class="tile"><b>🔥 ${st.streak}</b><span>day streak</span></div></div>
     <div class="card"><h3>Plan for now</h3><p>${phase}</p></div>
@@ -1100,7 +1292,8 @@ function vParent(note) {
       <p class="small">Not started yet: ${untouched.map(u => `${esc(u.s.name)} ${u.n} of ${u.all}`).join(' · ')}. Revision queue: ${Object.keys(st.review).filter(id => QI[id]).length} questions.</p></div>
     <div class="card"><h3>Timed test scores</h3>${trendSVG(timed.slice(0, 15).reverse())}
       ${timed.length ? `<div class="tablewrap"><table><thead><tr><th>When</th><th>Paper</th><th class="num">Score</th><th class="num">Time</th><th></th></tr></thead><tbody>${timed.slice(0, 10).map(e => `<tr><td>${fmtWhen(e.ts)}</td><td>${esc(e.label || MODE[e.mode])}</td><td class="num">${e.score}/${e.total} (${Math.round(100 * e.score / e.total)}%)</td><td class="num">${fmtSecs(e.secs)}</td><td class="noprint"><a href="#history/${e.id}">Review</a></td></tr>`).join('')}</tbody></table></div>` : ''}</div>
-    <div class="card"><h3>Badges</h3><div class="badges">${Object.keys(st.badges).map(b => `<span class="badge">${badgeInfo(b).icon} ${esc(badgeName(b))}</span>`).join('') || '<span class="badge off">None yet</span>'}</div></div>`);
+    <div class="card"><h3>Badges</h3><div class="badges">${Object.keys(st.badges).map(b => `<span class="badge">${badgeInfo(b).icon} ${esc(badgeName(b))}</span>`).join('') || '<span class="badge off">None yet</span>'}</div></div>
+    ${aiCard()}`);
 }
 
 const TIPS = [
@@ -1179,6 +1372,12 @@ const ACT = {
   exercise: d => { if (S && S.mode === 'exercise' && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startExercise(d.sid, d.tid); },
   quiz: d => { if (S && S.mode === 'quiz' && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startQuiz(d.sid, d.tid); },
   endsession: () => { if (S) finish(true); },
+  challenge: d => { if (S && S.hard && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startChallenge(d.sid, d.tid); },
+  hardtest: d => startHardTest(d.sid),
+  aiex: d => aiExercise(d.sid, d.tid, d.l),
+  aimock: d => aiMock(d.kind),
+  airemove: () => { aiStore(null); vParent('AI key removed from this device.'); },
+  aitest: () => { const was = location.hash; aiRun('a test question', async () => { await aiMake({ sid: 'maths', tids: ['four_ops'], n: 3, level: 1 }); if (location.hash === was) vParent('✅ The AI key works. AI practice and AI papers are now available.'); }); },
   restartex: d => { if (S) finish(false); startExercise(d.sid, d.tid); },
   test: d => startTest(d.sid),
   focus: d => startFocus(d.scope || 'all'),
@@ -1270,12 +1469,21 @@ const ACT = {
   }
 };
 const SUBMIT = {
+  aisave: () => {
+    const provider = ($('#aiprov') || {}).value || 'anthropic', key = (($('#aikey') || {}).value || '').trim(), model = (($('#aimodel') || {}).value || '').trim();
+    const old = aiConf() || {};
+    const k = key || (old.provider === provider ? old.key : '');
+    if (!k) return vParent('Please paste an API key.');
+    if (!model) return vParent('Please choose or type a model name.');
+    aiStore({ provider, key: k, model }); vParent('AI settings saved. Press "Test the key" to check it works.');
+  },
   hello: () => { const v = (($('#hello') || {}).value || '').trim().slice(0, 20); if (!v) return; st.settings.name = v; save(); sfx('right'); vHome(); toast(`Nice to meet you, ${v}! 🦉`); },
   setpin: () => { const v = ($('#pin1') || {}).value || ''; if (!/^\d{4,6}$/.test(v)) return vParent('The PIN must be 4 to 6 digits.'); st.settings.pin = hashPin(v); parentOK = true; save(); vParent('PIN saved.'); },
   unlock: () => { const v = ($('#pin2') || {}).value || ''; if (hashPin(v) === st.settings.pin) { parentOK = true; vParent(); } else vParent('That PIN is not right. Try again.'); }
 };
 document.addEventListener('submit', e => { const f = e.target.closest('[data-submit]'); if (f && SUBMIT[f.dataset.submit]) { e.preventDefault(); SUBMIT[f.dataset.submit](); } });
 const CHANGE = {
+  aiprov: () => { const c = aiConf() || {}; const v = ($('#aiprov') || {}).value; aiStore(Object.assign({}, c, { provider: v, model: v === 'anthropic' ? AI_MODELS[0][0] : '', key: c.provider === v ? c.key : '' })); vParent(); },
   name: el => { st.settings.name = el.value.trim().slice(0, 20) || null; save(); if (location.hash.startsWith('#cert')) route(); else vSettings('Name saved.'); },
   sound: el => { st.settings.sound = el.checked; save(); chips(); },
   examdate: el => { st.settings.examDate = el.value || null; save(); vSettings(el.value ? 'Exam date saved.' : 'Exam date cleared.'); },

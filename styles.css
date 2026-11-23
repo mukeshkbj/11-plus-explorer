@@ -409,3 +409,12 @@ details.fold[open] > .fold-body { animation: foldin .25s ease-out; }
 
 /* continue where you stopped */
 .resume { display: flex; justify-content: space-between; align-items: center; gap: .8rem; flex-wrap: wrap; background: linear-gradient(135deg, #e7f5ff, #fff); border: 2px solid #74c0fc; margin-top: 0; }
+
+/* challenge and AI */
+.pill.hardp { background: #ffe8cc; color: #d9480f; }
+.pill.aip { background: #f3f0ff; color: #6741d9; }
+.hardcard { border-color: #ffc078; background: linear-gradient(180deg, #fff4e6, #fff); }
+.aicard { border-color: #d0bfff; background: linear-gradient(180deg, #f8f5ff, #fff); }
+.spinner { width: 44px; height: 44px; margin: 1.2rem auto 0; border-radius: 50%; border: 5px solid #e5dbff; border-top-color: #7950f2; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#aiset select, #aiset .inp { width: 100%; }

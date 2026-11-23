@@ -26,7 +26,9 @@ open 11-plus-explorer/index.html
 - "Read to me" for questions, explanations and lessons, using the browser's built-in speech
 - A pop-up lesson can be opened in the middle of a question
 - 2,000+ original questions, plus reading passages, poems and cloze texts written for the app
-- A non-verbal reasoning puzzle engine that draws endless fresh puzzles for all ten NVR topics, each with a step-by-step explanation
+- Question generators that make endless fresh questions with worked methods: every Maths topic, the letter, number, code and logic topics in Verbal Reasoning, and all ten Non-Verbal Reasoning topics (drawn as pictures)
+- 🔥 Challenge practice (hard questions only) for every topic, and Challenge tests for every subject
+- ✨ Optional AI-made exercises and mock papers using your own Anthropic (Claude) or OpenAI API key, set up in the parent view. The key stays on the device and is never included in backups
 - Lessons with a step-by-step method, things to check, common traps, and a "Try one together" practice question
 
 **Tests and mocks**
@@ -78,6 +80,9 @@ app.js                     the whole app (views, sessions, tests, progress)
 styles.css                 styles
 data/<subject>.js          topics, lessons, passages and flashcards
 data/<subject>-questions.js  question bank
+data/gen-core.js           shared tools for the question generators
+data/maths-gen.js          maths question generators
+data/vr-gen.js             verbal reasoning question generators
 data/nvr-gen.js            non-verbal reasoning puzzle engine (seeded, so every puzzle can be rebuilt from its id)
 ```
 
