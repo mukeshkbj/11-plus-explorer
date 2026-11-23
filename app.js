@@ -3,7 +3,21 @@
 'use strict';
 
 // ---------------------------------------------------------------- setup
-const KEY = 'elevenplus.v1';
+// ---- children on this device: each child has their own saved progress; the parent PIN is shared
+const PKEY = 'elevenplus.profiles';
+const AVATARS = ['🦊', '🐼', '🦁', '🐯', '🐸', '🐙', '🦄', '🐧', '🐨', '🐬', '🦉', '🐲'];
+const keyFor = id => id === 'p1' ? 'elevenplus.v1' : 'elevenplus.v1.' + id;   // the first child keeps the original key, so nothing is lost
+function loadMeta() {
+  let m = null; try { m = JSON.parse(localStorage.getItem(PKEY)); } catch (e) { /* storage blocked */ }
+  if (m && Array.isArray(m.list) && m.list.length) return m;
+  let first = {}; try { first = JSON.parse(localStorage.getItem('elevenplus.v1')) || {}; } catch (e) { /* none yet */ }
+  return { list: [{ id: 'p1', name: (first.settings && first.settings.name) || '', avatar: '🦉' }], current: 'p1', pin: first.settings && first.settings.pin };
+}
+let meta = loadMeta();
+function saveMeta() { try { localStorage.setItem(PKEY, JSON.stringify(meta)); } catch (e) { /* storage blocked */ } }
+if (!meta.list.some(p => p.id === meta.current)) meta.current = meta.list[0].id;
+let KEY = keyFor(meta.current);
+const me = () => meta.list.find(p => p.id === meta.current);
 const SUBJECTS = [
   { id: 'maths', name: 'Maths', icon: '➗', c: '#3b5bdb' },
   { id: 'english', name: 'English', icon: '📖', c: '#ae3ec9' },
@@ -83,6 +97,8 @@ function load() {
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { storageOK = false; } }
 let st = load();
+if (!meta.pin && st.settings.pin) meta.pin = st.settings.pin;
+saveMeta();
 
 // ---------------------------------------------------------------- question bank
 const B = id => (window.BANK || {})[id];
@@ -312,7 +328,7 @@ function chips() {
   const bump = lastStars !== null && st.stars > lastStars;
   lastStars = st.stars;
   const r = rank().r;
-  el.innerHTML = `<a class="chip" href="#trophies" title="${esc(r[2])}">${r[1]}</a><span class="chip" title="Day streak">🔥 ${st.streak}</span><span class="chip star ${bump ? 'bump' : ''}" title="Stars">⭐ ${st.stars}</span>
+  el.innerHTML = `<a class="chip who" href="#who" title="${esc(me().name || 'Switch child')}">${me().avatar}${meta.list.length > 1 ? ` <span class="whoname">${esc(me().name || '')}</span>` : ''}</a><a class="chip" href="#trophies" title="${esc(r[2])}">${r[1]}</a><span class="chip" title="Day streak">🔥 ${st.streak}</span><span class="chip star ${bump ? 'bump' : ''}" title="Stars">⭐ ${st.stars}</span>
     <button class="chip" data-act="sound" aria-label="${soundOn() ? 'Turn sound off' : 'Turn sound on'}">${soundOn() ? '🔊' : '🔇'}</button>`;
 }
 const starsOf = (sid, tid) => { const m = mastery(sid, tid); return m >= 0.85 ? 3 : m >= 0.6 ? 2 : m >= 0.3 ? 1 : 0; };
@@ -823,6 +839,25 @@ function vHome() {
     </div>`);
 }
 
+// "Who's learning today?" screen
+function peekChild(id) { try { const o = JSON.parse(localStorage.getItem(keyFor(id))) || {}; return { stars: o.stars || 0, streak: o.streak || 0, badges: Object.keys(o.badges || {}).length }; } catch (e) { return { stars: 0, streak: 0, badges: 0 }; } }
+function vWho(note) {
+  page(`<h1>Who's learning today?</h1>${note ? `<div class="box eg">${esc(note)}</div>` : ''}
+    <div class="whogrid">${meta.list.map(p => { const k = peekChild(p.id); return `<button class="card whocard ${p.id === meta.current ? 'on' : ''}" data-act="switchchild" data-id="${p.id}"><span class="wa">${p.avatar}</span><b>${esc(p.name || 'Explorer')}</b><span class="small muted">⭐ ${k.stars} · 🔥 ${k.streak} · 🏅 ${k.badges}</span>${p.id === meta.current ? '<span class="pill">Playing now</span>' : ''}</button>`; }).join('')}</div>
+    ${meta.list.length < 6 ? `<div class="card"><h3>➕ Add a child</h3><p class="small muted">Each child gets their own stars, history, revision and parent report on this device.</p>
+      <form data-submit="addchild"><label for="newname">First name</label><input id="newname" class="inp" type="text" maxlength="20" autocomplete="off" placeholder="Name">
+      <p class="small" style="margin:.7rem 0 .3rem"><b>Pick an animal</b></p><div class="avpick">${AVATARS.map((a, i) => `<label><input type="radio" name="av" value="${a}" ${i === meta.list.length % AVATARS.length ? 'checked' : ''}><span>${a}</span></label>`).join('')}</div>
+      <button class="btn" type="submit" style="margin-top:.8rem">Add</button></form></div>` : ''}`);
+}
+function switchChild(id) {
+  if (!meta.list.some(p => p.id === id)) return;
+  if (S) { stamp(); stopTimer(); persist(); }
+  meta.current = id; saveMeta();
+  KEY = keyFor(id); st = load(); S = null; restore();
+  if (!st.settings.name && me().name) { st.settings.name = me().name; save(); }
+  F = null; TRY = null; lastStars = null; try { sessionStorage.setItem('elevenplus.chosen', '1'); } catch (e) { /* ok */ }
+  if (location.hash === '#home') route(); else location.hash = '#home';
+}
 function vMore() {
   const items = [['#progress', '📈', 'Progress', 'Strong and weak topics, score trend'], ['#history', '🕘', 'History', 'Every activity you have finished'], ['#tips', '💡', 'Exam tips', 'Tricks that add marks'], ['#parent', '🔒', 'Parent view', 'PIN protected summary for grown-ups'], ['#settings', '⚙️', 'Settings', 'Your name, sound, exam date, backup']];
   page(`<h1>More</h1>${items.map(i => `<a class="card subject" href="${i[0]}"><span class="ico">${i[1]}</span><span style="flex:1"><h3>${i[2]}</h3><span class="muted small">${i[3]}</span></span><span class="go">→</span></a>`).join('')}`);
@@ -1259,11 +1294,11 @@ const hashPin = p => { let h = 7; for (const c of String(p)) h = (h * 31 + c.cha
 let parentOK = false;
 function vParent(note) {
   const msg = note ? `<div class="box ${/not|must/i.test(note) ? 'watch' : 'eg'}">${esc(note)}</div>` : '';
-  if (!st.settings.pin) return page(`<h1>🔒 Parent view</h1>${msg}<div class="card"><p>Choose a PIN (4 to 6 digits) so only grown-ups can open this page.</p>
+  if (!meta.pin) return page(`<h1>🔒 Parent view</h1>${msg}<div class="card"><p>Choose a PIN (4 to 6 digits) so only grown-ups can open this page.</p>
     <form data-submit="setpin" class="row"><input id="pin1" class="inp" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" aria-label="New PIN" placeholder="New PIN"><button class="btn" type="submit">Save PIN</button></form></div>`);
   if (!parentOK) return page(`<h1>🔒 Parent view</h1>${msg}<div class="card"><p>Enter the parent PIN.</p>
     <form data-submit="unlock" class="row"><input id="pin2" class="inp" type="password" inputmode="numeric" autocomplete="current-password" maxlength="6" aria-label="PIN" placeholder="PIN"><button class="btn" type="submit">Open</button></form>
-    <p class="small muted">Forgotten it? Clearing all progress in Settings also removes the PIN.</p></div>`);
+    <p class="small muted">Forgotten it? Clearing a child's progress in Settings also removes the PIN.</p></div>`);
   const days = [...Array(14)].map((_, i) => plusDays(i - 13)), week = days.slice(7);
   const wk = st.history.filter(h => week.includes(h.day));
   const wkMins = Math.round(week.reduce((a, d) => a + (st.time[d] || 0), 0) / 60);
@@ -1280,7 +1315,8 @@ function vParent(note) {
     : n >= 0 ? '<b>Exam practice.</b> One mock paper a week under exam conditions, weak-spot tests on other days, and Fix my mistakes after each. Keep sessions short and positive.' : 'The exam date has passed. Update it in Settings if needed.';
   const untouched = SUBJECTS.filter(s => ready(s.id)).map(s => ({ s, n: B(s.id).topics.filter(t => !peek(s.id, t.id)).length, all: B(s.id).topics.length }));
   page(`<div class="row spread"><h1>🔒 Parent view</h1><div class="row noprint">${canPrint() ? '<button class="btn alt" data-act="print">🖨 Print or save as PDF</button>' : ''}<button class="btn ghost" data-act="lock">Lock</button></div></div>
-    <p class="muted">Summary for ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}. ${countdownHTML()}</p>
+    <p class="muted">${me().avatar} <b>${esc(me().name || 'Your child')}</b> · summary for ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}. ${countdownHTML()}</p>
+    ${meta.list.length > 1 ? `<div class="row noprint">${meta.list.map(p => `<button class="btn ${p.id === meta.current ? '' : 'alt'}" data-act="parentchild" data-id="${p.id}">${p.avatar} ${esc(p.name || 'Explorer')}</button>`).join('')}</div>` : ''}
     ${msg}
     <div class="tiles four"><div class="tile"><b>${wkMins}</b><span>minutes this week</span></div><div class="tile"><b>${wk.length}</b><span>sessions this week</span></div>
       <div class="tile"><b>${wkQ ? Math.round(100 * wkOK / wkQ) + '%' : '–'}</b><span>right this week (${wkQ} questions)</span></div><div class="tile"><b>🔥 ${st.streak}</b><span>day streak</span></div></div>
@@ -1343,7 +1379,7 @@ function vTips() {
     <a class="btn big" href="#tests">Go to the tests →</a>`);
 }
 
-let resetArmed = false;
+let resetArmed = false, removeArmed = null;
 function vSettings(note) {
   const days = Object.keys(st.time).sort().slice(-7);
   page(`<h1>Settings</h1>${note ? `<div class="box eg">${esc(note)}</div>` : ''}
@@ -1354,11 +1390,14 @@ function vSettings(note) {
     <div class="card"><label for="kidname">Your first name</label>
       <input id="kidname" class="inp" type="text" maxlength="20" autocomplete="off" value="${esc(st.settings.name || '')}" data-change="name" placeholder="For greetings and certificates">
       <label class="check"><input type="checkbox" data-change="sound" ${soundOn() ? 'checked' : ''}> Play sounds for right answers and awards</label></div>
+    <div class="card"><h3>Children on this device</h3><p class="muted small">Each child has their own progress. Switch child with the animal button at the top.</p>
+      ${meta.list.map(p => `<div class="row spread" style="padding:.35rem 0"><span>${p.avatar} <b>${esc(p.name || 'Explorer')}</b>${p.id === meta.current ? ' <span class="pill">Using now</span>' : ''}</span>${p.id === meta.current ? '' : `<button class="btn ghost" data-act="removechild" data-id="${p.id}">${removeArmed === p.id ? 'Press again to delete for good' : 'Remove'}</button>`}</div>`).join('')}
+      <a class="btn alt" href="#who" style="margin-top:.5rem">➕ Add or switch child</a></div>
     <div class="card"><label for="examdate">Exam date</label>
       <input id="examdate" class="inp" type="date" value="${esc(st.settings.examDate || '')}" data-change="examdate">
       <p class="muted small">Shows a countdown and adjusts the parent plan. The Kent Test is usually taken in early September at the start of Year 6. Check your council's website for the exact date.</p></div>
-    <div class="card"><h3>Parent PIN</h3><p class="muted small">${st.settings.pin ? 'A PIN is set for the parent view.' : 'No PIN yet. You can set one when you first open the parent view.'}</p>
-      <div class="row"><a class="btn alt" href="#parent">Open parent view</a>${st.settings.pin ? '<button class="btn ghost" data-act="clearpin">Remove PIN</button>' : ''}</div></div>
+    <div class="card"><h3>Parent PIN</h3><p class="muted small">${meta.pin ? 'A PIN is set for the parent view.' : 'No PIN yet. You can set one when you first open the parent view.'}</p>
+      <div class="row"><a class="btn alt" href="#parent">Open parent view</a>${meta.pin ? '<button class="btn ghost" data-act="clearpin">Remove PIN</button>' : ''}</div></div>
     <div class="card"><h3>Time spent (last 7 active days)</h3>${days.length ? `<table><tbody>${days.map(d => `<tr><td>${d.split('-').reverse().join('/')}</td><td class="num">${Math.round(st.time[d] / 60)} min</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">No sessions yet.</p>'}</div>
     <div class="card"><h3>Back up progress</h3><p class="muted small">Progress is stored only in this browser on this device. Save a backup file now and then, or use it to move progress to another device.</p>
       <div class="row"><button class="btn alt" data-act="export">Save a backup file</button><label class="btn alt" style="margin:0">Restore from a backup<input type="file" accept="application/json,.json" data-change="import" hidden></label></div></div>
@@ -1372,6 +1411,14 @@ const ACT = {
   exercise: d => { if (S && S.mode === 'exercise' && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startExercise(d.sid, d.tid); },
   quiz: d => { if (S && S.mode === 'quiz' && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startQuiz(d.sid, d.tid); },
   endsession: () => { if (S) finish(true); },
+  parentchild: d => { if (d.id === meta.current) return; if (S) { stamp(); stopTimer(); persist(); } meta.current = d.id; saveMeta(); KEY = keyFor(d.id); st = load(); S = null; restore(); F = null; TRY = null; lastStars = null; vParent(); },
+  switchchild: d => { if (d.id === meta.current) { location.hash = '#home'; return; } switchChild(d.id); },
+  removechild: d => {
+    const p = meta.list.find(x => x.id === d.id); if (!p || d.id === meta.current) return;
+    if (removeArmed !== d.id) { removeArmed = d.id; return vSettings(); }
+    removeArmed = null; meta.list = meta.list.filter(x => x.id !== d.id); saveMeta(); try { localStorage.removeItem(keyFor(d.id)); } catch (e) { /* ok */ }
+    vSettings(`${p.name || 'That child'} has been removed from this device.`);
+  },
   challenge: d => { if (S && S.hard && S.subject === d.sid && S.topic === d.tid) { location.hash = '#session'; return; } startChallenge(d.sid, d.tid); },
   hardtest: d => startHardTest(d.sid),
   aiex: d => aiExercise(d.sid, d.tid, d.l),
@@ -1393,7 +1440,7 @@ const ACT = {
   print: () => window.print(),
   sound: () => { st.settings.sound = !soundOn(); save(); chips(); if (soundOn()) sfx('right'); },
   lock: () => { parentOK = false; vParent(); },
-  clearpin: () => { delete st.settings.pin; parentOK = false; save(); vSettings('Parent PIN removed.'); },
+  clearpin: () => { delete meta.pin; delete st.settings.pin; parentOK = false; saveMeta(); save(); vSettings('Parent PIN removed.'); },
   revision: () => startRevision(),
   hint: () => { S.hint = true; renderSession(); },
   prompt: d => { promptIdx++; const y = window.scrollY; vLesson(d.sid, d.tid); window.scrollTo(0, y); },
@@ -1465,10 +1512,19 @@ const ACT = {
   },
   reset: () => {
     if (!resetArmed) { resetArmed = true; return vSettings(); }
-    resetArmed = false; st = fresh(); save(); vSettings('All progress has been cleared.');
+    resetArmed = false; S = null; st = fresh(); st.settings.name = me().name || null; delete meta.pin; saveMeta(); save(); vSettings(`All of ${me().name || 'this child'}'s progress has been cleared, and the parent PIN was removed.`);
   }
 };
 const SUBMIT = {
+  addchild: () => {
+    const name = (($('#newname') || {}).value || '').trim().slice(0, 20); if (!name) return vWho('Please type a name.');
+    const av = (document.querySelector('input[name=av]:checked') || {}).value || AVATARS[0];
+    const id = 'p' + Date.now().toString(36);
+    meta.list.push({ id, name, avatar: av }); saveMeta();
+    // the new child's progress starts fresh, with their name and the same exam setting
+    try { localStorage.setItem(keyFor(id), JSON.stringify(Object.assign(fresh(), { settings: { board: st.settings.board, name, examDate: st.settings.examDate || null } }))); } catch (e) { /* ok */ }
+    switchChild(id); toast(`Welcome, ${name}! ${av}`);
+  },
   aisave: () => {
     const provider = ($('#aiprov') || {}).value || 'anthropic', key = (($('#aikey') || {}).value || '').trim(), model = (($('#aimodel') || {}).value || '').trim();
     const old = aiConf() || {};
@@ -1477,14 +1533,14 @@ const SUBMIT = {
     if (!model) return vParent('Please choose or type a model name.');
     aiStore({ provider, key: k, model }); vParent('AI settings saved. Press "Test the key" to check it works.');
   },
-  hello: () => { const v = (($('#hello') || {}).value || '').trim().slice(0, 20); if (!v) return; st.settings.name = v; save(); sfx('right'); vHome(); toast(`Nice to meet you, ${v}! 🦉`); },
-  setpin: () => { const v = ($('#pin1') || {}).value || ''; if (!/^\d{4,6}$/.test(v)) return vParent('The PIN must be 4 to 6 digits.'); st.settings.pin = hashPin(v); parentOK = true; save(); vParent('PIN saved.'); },
-  unlock: () => { const v = ($('#pin2') || {}).value || ''; if (hashPin(v) === st.settings.pin) { parentOK = true; vParent(); } else vParent('That PIN is not right. Try again.'); }
+  hello: () => { const v = (($('#hello') || {}).value || '').trim().slice(0, 20); if (!v) return; st.settings.name = v; me().name = v; saveMeta(); save(); sfx('right'); vHome(); toast(`Nice to meet you, ${v}! 🦉`); },
+  setpin: () => { const v = ($('#pin1') || {}).value || ''; if (!/^\d{4,6}$/.test(v)) return vParent('The PIN must be 4 to 6 digits.'); meta.pin = hashPin(v); parentOK = true; saveMeta(); vParent('PIN saved.'); },
+  unlock: () => { const v = ($('#pin2') || {}).value || ''; if (hashPin(v) === meta.pin) { parentOK = true; vParent(); } else vParent('That PIN is not right. Try again.'); }
 };
 document.addEventListener('submit', e => { const f = e.target.closest('[data-submit]'); if (f && SUBMIT[f.dataset.submit]) { e.preventDefault(); SUBMIT[f.dataset.submit](); } });
 const CHANGE = {
   aiprov: () => { const c = aiConf() || {}; const v = ($('#aiprov') || {}).value; aiStore(Object.assign({}, c, { provider: v, model: v === 'anthropic' ? AI_MODELS[0][0] : '', key: c.provider === v ? c.key : '' })); vParent(); },
-  name: el => { st.settings.name = el.value.trim().slice(0, 20) || null; save(); if (location.hash.startsWith('#cert')) route(); else vSettings('Name saved.'); },
+  name: el => { st.settings.name = el.value.trim().slice(0, 20) || null; me().name = st.settings.name || ''; saveMeta(); save(); if (location.hash.startsWith('#cert')) route(); else vSettings('Name saved.'); },
   sound: el => { st.settings.sound = el.checked; save(); chips(); },
   examdate: el => { st.settings.examDate = el.value || null; save(); vSettings(el.value ? 'Exam date saved.' : 'Exam date cleared.'); },
   board: el => { st.settings.board = el.value; save(); vSettings('Exam setting saved.'); },
@@ -1517,7 +1573,7 @@ document.addEventListener('keydown', e => {
 function route() {
   const h = (location.hash || '#home').slice(1).split('/');
   if (h[0] !== 'session' && S) { stamp(); stopTimer(); persist(); }   // leaving pauses the activity; it can be continued later
-  if (h[0] !== 'settings') resetArmed = false;
+  if (h[0] !== 'settings') { resetArmed = false; removeArmed = null; }
   if (h[0] !== 'parent' && h[0] !== 'history') parentOK = false;
   closePop(); if (canSpeak()) speechSynthesis.cancel();
   if (h[0] !== 'session') view().classList.remove('wide');
@@ -1540,6 +1596,7 @@ function route() {
     case 'tips': vTips(); break;
     case 'trophies': vTrophies(); break;
     case 'more': vMore(); break;
+    case 'who': vWho(); break;
     case 'cert': vCert(decodeURIComponent(h.slice(1).join('/'))); break;
     default: vHome();
   }
@@ -1549,5 +1606,6 @@ window.addEventListener('hashchange', route);
 window.addEventListener('beforeunload', () => { if (S) { stamp(); persist(); } });
 document.addEventListener('visibilitychange', () => { if (document.hidden && S) { stamp(); persist(); if (location.hash === '#session') { S.qIdx = S.idx; S.qShown = Date.now(); } } });
 restore();
+try { if (meta.list.length > 1 && !sessionStorage.getItem('elevenplus.chosen') && (location.hash || '#home') === '#home') location.replace('#who'); } catch (e) { /* ok */ }
 route();
 })();

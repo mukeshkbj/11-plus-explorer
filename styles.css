@@ -418,3 +418,20 @@ details.fold[open] > .fold-body { animation: foldin .25s ease-out; }
 .spinner { width: 44px; height: 44px; margin: 1.2rem auto 0; border-radius: 50%; border: 5px solid #e5dbff; border-top-color: #7950f2; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #aiset select, #aiset .inp { width: 100%; }
+
+/* children on one device */
+.chip.who { font-size: 1.05rem; }
+.whoname { font-size: .85rem; max-width: 7em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.whogrid { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); margin-bottom: 1rem; }
+.whocard { display: flex; flex-direction: column; align-items: center; gap: .35rem; font: inherit; cursor: pointer; margin: 0; text-align: center; color: var(--ink); transition: transform .15s; }
+.whocard:hover { transform: translateY(-3px); }
+.whocard.on { border: 2px solid var(--brand); }
+.whocard .wa { font-size: 3.2rem; line-height: 1; }
+.avpick { display: flex; flex-wrap: wrap; gap: .4rem; }
+.avpick label { margin: 0; cursor: pointer; }
+.avpick input { position: absolute; opacity: 0; }
+.avpick span { display: grid; place-items: center; width: 48px; height: 48px; font-size: 1.7rem; border-radius: 14px; border: 2px solid var(--line); background: #fff; }
+.avpick input:checked + span { border-color: var(--brand); background: var(--brand-l); transform: scale(1.08); }
+.avpick input:focus-visible + span { outline: 3px solid var(--accent); }
+@media (max-width: 760px) { .chips .chip.who { display: inline-flex !important; } .whoname { display: none; } }
+@media (max-width: 760px) { .chips .chip:nth-child(3) { display: none; } }

@@ -48,6 +48,10 @@ open 11-plus-explorer/index.html
 - Exam readiness score for each subject and a countdown to the exam date
 - Exam tips page covering technique, each subject and the day itself
 
+**Children on one device**
+- "Who's learning today?" screen with an animal for each child
+- Separate stars, history, revision, awards and parent report for every child
+
 **Parent view** (PIN protected)
 - Minutes, sessions and accuracy this week, plus a 14-day practice chart
 - Readiness by subject, topics that need attention, and timed test history
@@ -107,7 +111,7 @@ Optional fields: `svg` (a figure shown with the question), `of` (picture options
 
 ## Privacy
 
-Progress is stored in the browser's local storage on the device and never leaves it. The Settings page can save a backup file and restore it on another device.
+Progress is stored in the browser's local storage on the device and never leaves it, separately for each child. An optional AI key is stored on the device too, never in backup files, and is sent only to the AI company you choose. The Settings page can save a backup file and restore it on another device.
 
 ## Disclaimer
 
