@@ -94,3 +94,95 @@ window.BANK.maths = {
   ],
   questions: []
 };
+
+/* Deeper lesson notes: a step-by-step method, things to check and common traps for every maths topic. */
+(function () {
+  const more = {
+    place_value: {
+      method: ['Write the number in a place value chart: millions, hundred thousands, ten thousands, thousands, hundreds, tens, ones, then tenths and hundredths.', 'Find the digit you are asked about and read the name of its column.', 'Its value is the digit × the column value. For example, the 7 in 47,215 is 7 × 1,000 = 7,000.', 'To round, find the column you are rounding to, look at the digit to its right, and round up for 5 or more.'],
+      checklist: ['Which column?', 'Zeros as place holders', 'Rounding digit: 5 or more rounds up', 'Negative numbers: further from zero is smaller'],
+      traps: ['Forgetting place-holding zeros: forty thousand and sixteen is 40,016.', 'Rounding using the wrong digit.', 'Thinking −8 is bigger than −3.']
+    },
+    four_ops: {
+      method: ['Estimate first so you know roughly what the answer should be.', 'Line numbers up in columns for adding and subtracting, starting with the ones.', 'For big multiplications, split one number into tens and ones, multiply both parts, then add.', 'For division, ask "how many of these fit?" and use your times tables.', 'Check with the inverse: adding checks subtracting, multiplying checks dividing.'],
+      checklist: ['Estimate', 'Columns lined up', 'Carry and exchange', 'Brackets, then × and ÷, then + and −', 'Check with the inverse'],
+      traps: ['Working left to right when there is × or ÷ later in the sum.', 'Forgetting to carry or exchange.', 'In word problems with remainders, not deciding whether to round up or down.']
+    },
+    fractions: {
+      method: ['The bottom number (denominator) says how many equal parts. The top (numerator) says how many you have.', 'To find a fraction of an amount: divide by the bottom, multiply by the top.', 'To compare or add, make the bottom numbers the same first.', 'Simplify by dividing the top and bottom by the same number.'],
+      checklist: ['Same denominator?', 'Simplest form', 'Improper ↔ mixed number', 'Divide by the bottom, times by the top'],
+      traps: ['Adding the bottom numbers: 1/4 + 1/4 is 2/4, not 2/8.', 'Thinking a bigger bottom number means a bigger fraction (1/8 is smaller than 1/4).', 'Using the whole amount when the question says "of the rest".']
+    },
+    decimals: {
+      method: ['Line up the decimal points when you add or subtract. Fill gaps with zeros: 3.5 is 3.50.', 'To multiply a decimal, multiply without the point, then put the same number of decimal places back.', '× 10, 100 or 1,000 moves digits left; ÷ moves them right.', 'Compare decimals by giving them the same number of decimal places.'],
+      checklist: ['Points lined up', 'Same number of decimal places', 'Digits move, the point stays', 'Money is two decimal places'],
+      traps: ['Thinking 0.45 is bigger than 0.5 because 45 is bigger than 5.', 'Lining up the right-hand digits instead of the points.', 'Writing £3.5 instead of £3.50.']
+    },
+    percentages: {
+      method: ['Per cent means "out of 100".', 'Find 10% by dividing by 10. Find 1% by dividing by 100. Find 50% by halving and 25% by halving again.', 'Build other percentages from these: 35% = 10% + 10% + 10% + 5%.', 'For an increase add it on; for a decrease or discount take it off.'],
+      checklist: ['10% = ÷ 10', '50% = half', '25% = quarter', 'Increase: add on', 'Sale: take off'],
+      traps: ['Giving the discount instead of the new price.', 'Thinking 5% is ÷ 5 (it is half of 10%).']
+    },
+    ratio: {
+      method: ['A ratio compares parts, like 2 : 3.', 'To share in a ratio, add the parts to find how many shares there are.', 'Divide the total by the number of shares to find one share.', 'Multiply one share by each part of the ratio.', 'For recipes, find how many times bigger the new amount is and multiply everything by that.'],
+      checklist: ['Add the parts', 'Value of one share', 'Order matters', 'Simplify like a fraction'],
+      traps: ['Dividing by the number of parts in the ratio instead of the total of the parts.', 'Mixing up the order: 2 : 3 is not the same as 3 : 2.']
+    },
+    algebra: {
+      method: ['A letter stands for an unknown number.', '3n means 3 × n. n² means n × n.', 'To solve, undo each step in reverse order, doing the same to both sides.', 'To substitute, swap the letter for its number, then follow the order of operations.', 'Check your answer by putting it back in.'],
+      checklist: ['Same to both sides', 'Undo in reverse', '3n means 3 × n', 'Check by substituting'],
+      traps: ['Reading 3n as thirty-something when n = 5 (it is 3 × 5 = 15).', 'Undoing the steps in the wrong order.']
+    },
+    sequences: {
+      method: ['Find the difference between each pair of numbers.', 'If the differences are the same, keep adding (or taking away) that amount.', 'If the differences change, look for a pattern in the differences.', 'Also check for doubling, halving, square numbers and triangle numbers.', 'For an nth term rule, put the position number in place of n.'],
+      checklist: ['Differences', 'Differences of differences', 'Multiplying?', 'Square numbers', 'Two series taking turns'],
+      traps: ['Assuming it always goes up by the same amount.', 'Miscounting when the sequence goes below zero.']
+    },
+    measures: {
+      method: ['Learn the key facts: 10 mm = 1 cm, 100 cm = 1 m, 1,000 m = 1 km, 1,000 g = 1 kg, 1,000 ml = 1 l.', 'Big unit to small unit: multiply. Small unit to big unit: divide.', 'Change everything into the same unit before you add, subtract or compare.', 'Read scales carefully: work out what each small mark is worth.'],
+      checklist: ['Same units', 'Big → small: ×', 'Small → big: ÷', 'Value of each mark on a scale'],
+      traps: ['Multiplying when you should divide.', 'Adding 2 m and 50 cm to get 52.', 'Treating 1.5 kg as 1 kg 5 g instead of 1 kg 500 g.']
+    },
+    time: {
+      method: ['There are 60 minutes in an hour, not 100. Do not use column subtraction on times.', 'To find how long something takes, count on: first to the next o\'clock, then to the end time.', 'To change 24-hour times after midday to 12-hour times, take 12 from the hours and add pm.', 'Learn the other facts: 60 seconds, 24 hours, 7 days, 52 weeks, 365 days (366 in a leap year).'],
+      checklist: ['Count on to the hour', '60 minutes in an hour', 'am or pm', '24-hour clock'],
+      traps: ['Subtracting times like ordinary numbers (10:15 − 9:50 is not 65 minutes).', 'Mixing up 12:00 midday and midnight.']
+    },
+    money: {
+      method: ['Change to pence when it makes the sum easier: £3.45 = 345p.', 'For change, count up from the cost to the amount paid.', 'For best value, work out the cost of one item in each deal.', 'Write the answer with two decimal places: £4.50, not £4.5.'],
+      checklist: ['Pounds or pence?', 'Count up for change', 'Price of one', 'Two decimal places'],
+      traps: ['Mixing pounds and pence in one sum.', 'Thinking the biggest pack is always the best value.']
+    },
+    area_perimeter: {
+      method: ['Perimeter is the distance all the way round: add every side.', 'Area of a rectangle = length × width, in square units (cm²).', 'Area of a triangle = half of base × height.', 'For L-shapes, split into rectangles, or take a small rectangle away from a big one.', 'Find any missing side lengths first.'],
+      checklist: ['Perimeter: add all sides', 'Area: length × width', 'Units: cm or cm²', 'Missing sides first'],
+      traps: ['Mixing up area and perimeter.', 'Forgetting the sides you cannot see labelled on an L-shape.', 'Forgetting to halve for a triangle.']
+    },
+    angles: {
+      method: ['Know the key facts: right angle 90°, straight line 180°, all the way round 360°.', 'Angles in a triangle add to 180°. In a quadrilateral they add to 360°.', 'Write down what you know, then take away from the total.', 'Look for clues: equal sides mean equal angles in an isosceles triangle.'],
+      checklist: ['Straight line 180°', 'Around a point 360°', 'Triangle 180°', 'Quadrilateral 360°', 'Equal sides, equal angles'],
+      traps: ['Using 360° for a straight line.', 'Forgetting that the two base angles of an isosceles triangle are equal.']
+    },
+    shapes: {
+      method: ['For 2D shapes, look at the number of sides, equal sides, parallel sides, right angles and lines of symmetry.', 'For 3D shapes count faces (flat surfaces), edges (where faces meet) and vertices (corners).', 'A prism has the same shape at both ends. A pyramid comes to a point.', 'A regular shape has all sides and all angles equal.'],
+      checklist: ['Sides', 'Parallel sides', 'Right angles', 'Lines of symmetry', 'Faces, edges, vertices'],
+      traps: ['Mixing up edges and vertices.', 'Thinking every four-sided shape with equal sides is a square (a rhombus has no right angles).']
+    },
+    coordinates: {
+      method: ['Coordinates are written (x, y): along the corridor, then up the stairs.', 'Moving right or left changes the first number. Moving up or down changes the second.', 'For a missing corner of a rectangle, match the x of one corner and the y of another.', 'Negative numbers are left of or below the zero point.'],
+      checklist: ['Along, then up', 'x first', 'Negative = left or down', 'Opposite sides line up'],
+      traps: ['Writing the numbers the wrong way round.', 'Moving the wrong way across zero.']
+    },
+    data: {
+      method: ['Read the title, the labels and the scale before you answer.', 'Mean: add them all, divide by how many. Median: put in order, take the middle. Mode: the most common. Range: biggest − smallest.', 'For pie charts, the whole circle (360°) is everyone.', 'For line graphs, read across from the axis carefully.'],
+      checklist: ['Read the scale', 'Mean', 'Median: order first', 'Mode', 'Range'],
+      traps: ['Finding the median without putting the numbers in order.', 'Reading a scale as going up in 1s when it goes up in 2s or 5s.']
+    },
+    word_problems: {
+      method: ['Read the whole question, then read it again.', 'Underline the numbers and the key words: "each", "altogether", "how many more", "left".', 'Decide what to do first, second and third. Write each step down.', 'Check the answer makes sense in the story, and has the right units.'],
+      checklist: ['What is the question?', 'Key words', 'One step at a time', 'Units', 'Does it make sense?'],
+      traps: ['Stopping after the first step of a two-step problem.', 'Using all the numbers just because they are there.']
+    }
+  };
+  window.BANK.maths.topics.forEach(t => Object.assign(t.lesson, more[t.id] || {}));
+})();

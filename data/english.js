@@ -114,3 +114,65 @@ window.BANK.english = {
   ],
   questions: []
 };
+
+/* Deeper lesson notes: a step-by-step method, things to check and common traps for every English topic. */
+(function () {
+  const more = {
+    spelling: {
+      method: ['Say the word slowly and split it into syllables: Feb-ru-ar-y.', 'Look for small words hiding inside big ones: "a rat" in separate.', 'Use rules: i before e except after c (when it sounds like "ee"); double the last letter after a short vowel (hopping).', 'Picture the word written in a book. Does it look right?'],
+      checklist: ['Syllables', 'Double letters', 'Silent letters', 'Homophones', 'Word endings (-tion, -cious, -ible)'],
+      traps: ['Mixing up there, their and they\'re.', 'Writing words the way you say them (Wensday for Wednesday).']
+    },
+    vocabulary: {
+      method: ['Read the whole sentence, not just the word.', 'Cover the word and think what would make sense in the gap.', 'Look for clues: the word\'s parts (un-, -ful, -less) and nearby words.', 'Put each option back into the sentence and choose the one that keeps the meaning.'],
+      checklist: ['Context clues', 'Prefixes and suffixes', 'Try it in the sentence'],
+      traps: ['Choosing a word that looks similar rather than means the same.']
+    },
+    synonyms_antonyms: {
+      method: ['Synonyms mean the same. Antonyms mean the opposite. Check which the question wants.', 'Think of the word in a sentence first.', 'Test each option in the same sentence.', 'Make sure the words are the same kind (both describing words, both doing words).'],
+      checklist: ['Same or opposite?', 'Same kind of word', 'Try it in a sentence'],
+      traps: ['Giving a synonym when the question asks for an antonym.']
+    },
+    punctuation: {
+      method: ['Every sentence starts with a capital letter and ends with a full stop, question mark or exclamation mark.', 'Commas separate items in a list and mark off extra information.', 'Apostrophes show missing letters (don\'t) or belonging (the dog\'s bone).', 'Speech marks go around the words actually spoken, with the punctuation inside.'],
+      checklist: ['Capital letters', 'End marks', 'Commas', 'Apostrophes', 'Speech marks'],
+      traps: ['Putting an apostrophe in plurals (apple\'s for sale).', 'Writing it\'s when you mean its.']
+    },
+    grammar: {
+      method: ['Find the verb: the doing or being word. Check it matches its subject (he runs, they run).', 'Keep the tense the same through a sentence unless the time changes.', 'Know your word classes: noun, verb, adjective, adverb, pronoun, preposition, conjunction.', 'Read the sentence aloud quietly. Does it sound right?'],
+      checklist: ['Subject and verb agree', 'Tense', 'Word classes', 'Sounds right'],
+      traps: ['Writing "could of" instead of "could have".', 'Switching between past and present in one sentence.']
+    },
+    sentence_completion: {
+      method: ['Read the whole sentence before choosing.', 'Decide what kind of word is needed (a noun, a verb, a describing word).', 'Try each option in the gap.', 'Choose the one that makes sense and sounds right.'],
+      checklist: ['Kind of word', 'Meaning', 'Grammar'],
+      traps: ['Choosing a word that makes sense but does not fit grammatically (a, an, plurals).']
+    },
+    cloze: {
+      method: ['Read the whole passage first to understand it.', 'For each gap, read the sentence before and after.', 'Decide what kind of word fits, then try the options.', 'Reread the finished sentence.'],
+      checklist: ['Whole passage first', 'Sentence before and after', 'Grammar', 'Meaning'],
+      traps: ['Filling a gap using only the words right next to it.']
+    },
+    comp_fiction: {
+      method: ['Read the passage once for the story. Who? Where? What happens?', 'Read each question carefully. Underline the key word (why, how, which, feel).', 'Go back to the passage and find the exact lines that answer it.', 'For "how does the character feel?", look at what they say and do, not just the feelings words.', 'Rule out options that are not supported by the text.'],
+      checklist: ['Who, where, what', 'Find the lines', 'Clues to feelings', 'Writer\'s word choices'],
+      traps: ['Answering from your own ideas instead of the text.', 'Choosing an option that is true but does not answer the question.']
+    },
+    comp_nonfiction: {
+      method: ['Skim the title, headings and first lines to see what the text is about.', 'Read the question and find the key word.', 'Scan the text for that word or idea, then read that part closely.', 'Watch the difference between facts and opinions.'],
+      checklist: ['Headings', 'Key words', 'Fact or opinion', 'Purpose of the text'],
+      traps: ['Choosing a fact from the wrong part of the text.', 'Mixing up what the writer thinks with what is true.']
+    },
+    comp_poetry: {
+      method: ['Read the poem twice, once to enjoy it and once to understand it.', 'Use the line numbers the question gives you.', 'Look for images: similes (like, as) and metaphors (saying something is something else).', 'Think about the mood: how does the poem make you feel, and which words do that?'],
+      checklist: ['Line numbers', 'Similes and metaphors', 'Mood', 'Rhyme and rhythm'],
+      traps: ['Taking images literally (a "sea of faces" is a crowd, not water).']
+    },
+    creative_writing: {
+      method: ['Spend 5 minutes planning: beginning, problem, ending.', 'Open with something that grabs the reader: action, speech or a question.', 'Use your senses: what can be seen, heard, smelt and felt?', 'Vary your sentences: short ones for tension, longer ones for description.', 'Leave 5 minutes to check spelling and punctuation.'],
+      checklist: ['Plan', 'Strong opening', 'Senses', 'Varied sentences', 'Paragraphs', 'Check'],
+      traps: ['Starting without a plan and running out of time before the ending.', 'Too much "and then" instead of description.']
+    }
+  };
+  window.BANK.english.topics.forEach(t => Object.assign(t.lesson, more[t.id] || {}));
+})();

@@ -101,3 +101,115 @@ window.BANK.vr = {
   ],
   questions: []
 };
+
+/* Deeper lesson notes: a step-by-step method, things to check and common traps for every verbal reasoning topic. */
+(function () {
+  const more = {
+    closest_meaning: {
+      method: ['Read all six words before choosing.', 'Take the first word in the first group and test it against every word in the second group.', 'Put each pair into a sentence: "the room was big" / "the room was large".', 'Watch for words with more than one meaning: "light" can mean not heavy or not dark.'],
+      checklist: ['Test every pair', 'Same part of speech', 'Two meanings?'],
+      traps: ['Choosing words that are linked (like "cat" and "dog") rather than the same in meaning.', 'Stopping at the first pair that seems close.']
+    },
+    opposite_meaning: {
+      method: ['Read all six words.', 'For each word in the first group, think of its opposite, then look for it in the second group.', 'Test the pair in a sentence: "the water was hot / cold".', 'Check the words are the same kind (both describing words, both doing words).'],
+      checklist: ['True opposite', 'Same kind of word', 'Try in a sentence'],
+      traps: ['Choosing words that are just different, not opposite.', 'Missing an opposite made with a prefix: happy / unhappy.']
+    },
+    odd_two_out: {
+      method: ['Read all five words.', 'Find three words that belong to one group: same meaning, same category, or same type of word.', 'The two left over are the answer.', 'Check that the two you chose really do not fit the group.'],
+      checklist: ['Same category', 'Same meaning', 'Hidden link (all are colours, all are verbs)'],
+      traps: ['Picking two words that go together with each other rather than the two that do not fit.']
+    },
+    word_connections: {
+      method: ['Say how the first pair is connected in a sentence: "a puppy is a young dog".', 'Use exactly the same sentence for the second pair.', 'Check each option in your sentence.'],
+      checklist: ['Young and adult', 'Part and whole', 'Opposites', 'Worker and tool', 'Group names'],
+      traps: ['Choosing an answer that is linked to the word but in a different way.']
+    },
+    multiple_meanings: {
+      method: ['Read both pairs of words. Each pair points to one meaning.', 'Think of a word that fits both: "bark" fits "tree skin" and "dog sound".', 'Test the option in both pairs.'],
+      checklist: ['Two meanings', 'Fits both pairs', 'Same spelling'],
+      traps: ['Choosing a word that fits only one of the pairs.']
+    },
+    compound_words: {
+      method: ['Take each word from the first group and add each word from the second group.', 'Say the new word out loud. Is it a real word?', 'Remember the first word must come first.'],
+      checklist: ['Real word', 'Order kept', 'Spelling unchanged'],
+      traps: ['Making a word that sounds right but is spelled differently.', 'Joining the words in the wrong order.']
+    },
+    insert_letter: {
+      method: ['One letter finishes the first word and starts the second word, in both pairs.', 'Try each letter of the alphabet in the first pair.', 'Check the same letter works in the second pair.'],
+      checklist: ['Ends word 1', 'Starts word 2', 'Works for both pairs'],
+      traps: ['Finding a letter that works for one pair only.']
+    },
+    hidden_word: {
+      method: ['A four-letter word is hidden across the end of one word and the start of the next.', 'Slide a four-letter window along the sentence, crossing each gap.', 'Say each group of four letters. Is it a real word?'],
+      checklist: ['Crosses a gap', 'Four letters', 'Real word'],
+      traps: ['Choosing a word that is inside one word only.', 'Missing words that cross a short word like "a" or "to".']
+    },
+    missing_three: {
+      method: ['Read the sentence and work out the word that fits the meaning.', 'Compare it with the letters shown. The three missing letters are next to each other.', 'The missing letters make a real three-letter word.'],
+      checklist: ['Makes sense', 'Letters together', 'A real three-letter word'],
+      traps: ['Using a word that fits the sentence but does not match the letters given.']
+    },
+    move_letter: {
+      method: ['Take one letter from the first word and put it anywhere in the second word.', 'Both new words must be real words.', 'Try each letter of the first word in turn.'],
+      checklist: ['Both are real words', 'Other letters stay in order'],
+      traps: ['Forgetting to check that the first word still makes a real word.']
+    },
+    make_word: {
+      method: ['Look at the first two groups. Work out which letters from the outside words make the middle word.', 'Number the letters to see the pattern: for example, letters 1 and 2 of the first word and 3 and 4 of the second.', 'Use the same pattern on the last group.'],
+      checklist: ['Number the letters', 'Same pattern both times'],
+      traps: ['Finding a pattern that works in one group but not the other.']
+    },
+    complete_word: {
+      method: ['Read the sentence and think about what word would make sense.', 'Check it against the letters already given.', 'Make sure the spelling is exactly right.'],
+      checklist: ['Makes sense', 'Matches given letters', 'Spelling'],
+      traps: ['Choosing a word with the right meaning but the wrong letters.']
+    },
+    letter_series: {
+      method: ['Write the alphabet with numbers: A1, B2 … Z26. Remember EJOTY: E5, J10, O15, T20, Y25.', 'Look at the first letters on their own. Count the jump each time.', 'Then look at the second letters on their own.', 'If you go past Z, carry on from A.'],
+      checklist: ['First letters', 'Second letters', 'Forward or back', 'Jump grows?', 'Wrap round past Z'],
+      traps: ['Miscounting the jump by one.', 'Mixing up the first and second letters.']
+    },
+    letter_connections: {
+      method: ['Work out how each letter in the first pair changes to become the second pair.', 'Write the jumps as + or − numbers.', 'Do exactly the same jumps to the third pair.', 'Watch out for mirror pairs: A↔Z, B↔Y, C↔X.'],
+      checklist: ['Jump for letter 1', 'Jump for letter 2', 'Mirror letters?'],
+      traps: ['Applying the first jump to both letters when they are different.']
+    },
+    letter_codes: {
+      method: ['Write the word above its code, letter by letter.', 'Work out how each letter changes. It may be the same jump for all, a growing jump, or a mirror code.', 'To code a new word, make the same changes.', 'To decode, go the opposite way.'],
+      checklist: ['Same jump?', 'Growing jump?', 'Mirror code?', 'Encode or decode?'],
+      traps: ['Going the wrong way when decoding.', 'Forgetting to wrap round from Z to A.']
+    },
+    word_number_codes: {
+      method: ['Look for words that share letters in the same places, and codes that share numbers in the same places.', 'Match a word to its code using a repeated or unusual pattern first.', 'Write down which number stands for each letter.', 'Use your list to code the new word.'],
+      checklist: ['Repeated letters', 'Same start or end', 'Letter-number list'],
+      traps: ['Assuming the codes are in the same order as the words.']
+    },
+    number_series: {
+      method: ['Write the jump between each pair of numbers underneath.', 'Is it adding, taking away, multiplying or dividing?', 'If the jumps change, look at the jumps themselves.', 'Check for two series taking turns, and for square or cube numbers.'],
+      checklist: ['Jumps', 'Jumps of jumps', '× or ÷', 'Two series', 'Square numbers'],
+      traps: ['Assuming the jump is always the same.']
+    },
+    related_numbers: {
+      method: ['Look at the first group. Try adding, subtracting, multiplying and dividing the outside numbers.', 'When you find a rule that gives the middle number, test it on the second group.', 'Use the rule on the last group.'],
+      checklist: ['+', '−', '×', '÷', 'Two steps (× then +)'],
+      traps: ['Using a rule that only works for the first group.']
+    },
+    complete_sum: {
+      method: ['Work out the side of the equals sign that has no gap.', 'The other side must make the same total.', 'Use the inverse to find the missing number.'],
+      checklist: ['Work out the full side', 'Same total both sides', 'Inverse'],
+      traps: ['Ignoring the order of operations on the full side.']
+    },
+    letters_numbers: {
+      method: ['Swap each letter for its number.', 'Work out the sum, remembering brackets first, then × and ÷, then + and −.', 'Find the letter that has that value.'],
+      checklist: ['Swap letters for numbers', 'Order of operations', 'Answer as a letter'],
+      traps: ['Giving the number instead of the letter.']
+    },
+    logic: {
+      method: ['Read all the information before answering.', 'Draw a quick table, line or grid.', 'Add one clue at a time and tick or cross as you go.', 'Answer exactly the question asked.'],
+      checklist: ['Read everything', 'Draw it', 'One clue at a time', 'What is the question?'],
+      traps: ['Answering from memory instead of checking the clues.', 'Mixing up "older than" and "younger than".']
+    }
+  };
+  window.BANK.vr.topics.forEach(t => Object.assign(t.lesson, more[t.id] || {}));
+})();
