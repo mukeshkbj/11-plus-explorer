@@ -215,7 +215,7 @@ const BADGES = [
   { id: 'focus1', icon: '🎯', name: 'Weak-spot warrior', how: 'Score 70% or more in a weak-spot test' },
   { id: 'mock1', icon: '📝', name: 'First mock exam', how: 'Finish a whole mock paper' },
   { id: 'mock80', icon: '🏆', name: 'Mock exam star', how: 'Score 80% or more in a mock exam with several sections' }
-];
+].concat((window.DRILLS && window.DRILLS.badges) || []);   // speed drill trophies live in drills.js
 const MEDALS = [{ k: 'bronze', icon: '🥉', name: 'Bronze' }, { k: 'silver', icon: '🥈', name: 'Silver' }, { k: 'gold', icon: '🥇', name: 'Gold' }];
 const medalNeed = (sid, k) => { const n = B(sid).topics.length; return k === 'bronze' ? 3 : k === 'silver' ? Math.ceil(n / 2) : n; };
 const topicStars = sid => Object.keys(st.badges).filter(b => b.startsWith('t:' + (sid ? sid + '/' : ''))).length;
@@ -911,6 +911,7 @@ function vHome() {
     <div class="grid">
       <a class="card subject" href="#tests" style="--c:#e8590c"><span class="ico">🎲</span><span><h3>Take a new test</h3><span class="muted small">Every test is freshly picked. Try a weak-spot test!</span></span></a>
       <a class="card subject" href="#trophies" style="--c:#f08c00"><span class="ico">🏆</span><span><h3>Trophy room</h3><span class="muted small">${Object.keys(st.badges).length} awards so far. What's next?</span></span></a>
+      ${window.DRILLS ? `<a class="card subject" href="#drills" style="--c:#e8590c"><span class="ico">⚡</span><span><h3>Speed drills</h3><span class="muted small">60-second times tables, mental maths and alphabet races.</span></span></a>` : ''}
       <a class="card subject" href="#tips" style="--c:#2f9e44"><span class="ico">💡</span><span><h3>Exam tips</h3><span class="muted small">Tricks that add marks in every paper.</span></span></a>
     </div>
     <div class="card">
@@ -939,7 +940,7 @@ function switchChild(id) {
   if (location.hash === '#home') route(); else location.hash = '#home';
 }
 function vMore() {
-  const items = [['#progress', '📈', 'Progress', 'Strong and weak topics, score trend'], ['#history', '🕘', 'History', 'Every activity you have finished'], ['#tips', '💡', 'Exam tips', 'Tricks that add marks'], ['#parent', '🔒', 'Parent view', 'PIN protected summary for grown-ups'], ['#settings', '⚙️', 'Settings', 'Your name, sound, exam date, backup']];
+  const items = [['#drills', '⚡', 'Speed drills', 'Quick-fire times tables, mental maths and alphabet'], ['#progress', '📈', 'Progress', 'Strong and weak topics, score trend'], ['#history', '🕘', 'History', 'Every activity you have finished'], ['#tips', '💡', 'Exam tips', 'Tricks that add marks'], ['#parent', '🔒', 'Parent view', 'PIN protected summary for grown-ups'], ['#settings', '⚙️', 'Settings', 'Your name, sound, exam date, backup']];
   page(`<h1>More</h1>${items.map(i => `<a class="card subject" href="${i[0]}"><span class="ico">${i[1]}</span><span style="flex:1"><h3>${i[2]}</h3><span class="muted small">${i[3]}</span></span><span class="go">→</span></a>`).join('')}`);
 }
 // ---- trophy room and certificates
@@ -988,7 +989,7 @@ function vLearn() {
       const tops = B(s.id).topics, got = tops.reduce((a, t) => a + starsOf(s.id, t.id), 0), medal = [...MEDALS].reverse().find(m => st.badges[`m:${s.id}:${m.k}`]);
       return `<a class="card subject" href="#learn/${s.id}" style="--c:${s.c}"><span class="ico">${s.icon}</span><span style="flex:1"><h3>${esc(s.name)} ${medal ? medal.icon : ''}</h3>
         <span class="muted small">${tops.length} topics · ⭐ ${got} of ${tops.length * 3} stars</span>${bar(got / (tops.length * 3), 'c')}</span><span class="go">→</span></a>`;
-    }).join('') + '</div>');
+    }).join('') + '</div>' + (window.DRILLS ? `<a class="card subject" href="#drills" style="--c:#e8590c"><span class="ico">⚡</span><span style="flex:1"><h3>Speed drills</h3><span class="muted small">Race the clock: times tables, mental maths, alphabet positions</span></span><span class="go">→</span></a>` : ''));
 }
 
 function vSubject(sid) {
@@ -1977,6 +1978,11 @@ document.addEventListener('keydown', e => {
   if (k.length === 1 && i >= 0 && i < S.items[S.idx].q.opts.length) ACT.pick({ i });
 });
 
+// Speed drills (drills.js): the few helpers they need. Drill results stay out of the question history.
+if (window.DRILLS) window.DRILLS.init({ get st() { return st; }, save, page, esc, sfx, toast, confetti, buddy, celebrate,
+  win: ids => { awards = []; ids.forEach(award); checkAwards(); save(); return awards.slice(); },
+  practised: secs => { if (st.lastDay !== today()) { st.streak = st.lastDay === plusDays(-1) ? st.streak + 1 : 1; st.lastDay = today(); } st.time[today()] = (st.time[today()] || 0) + secs; } });
+
 // ---------------------------------------------------------------- routing
 function route() {
   const h = (location.hash || '#home').slice(1).split('/');
@@ -1985,7 +1991,7 @@ function route() {
   if (h[0] !== 'parent' && h[0] !== 'history') parentOK = false;
   closePop(); if (canSpeak()) speechSynthesis.cancel();
   if (h[0] !== 'session') view().classList.remove('wide');
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === h[0] || a.dataset.nav === ({ topic: 'learn', lesson: 'learn', session: '', tips: 'more', cert: 'trophies', progress: 'more', history: 'more', parent: 'more', settings: 'more' }[h[0]] ?? h[0])));
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === h[0] || a.dataset.nav === ({ topic: 'learn', lesson: 'learn', drills: 'learn', session: '', tips: 'more', cert: 'trophies', progress: 'more', history: 'more', parent: 'more', settings: 'more' }[h[0]] ?? h[0])));
   if (h[0] !== 'login') document.body.classList.remove('gate');
   if (h[0] !== 'login' && needLogin()) { try { if (h[0] !== 'who') sessionStorage.setItem('elevenplus.after', location.hash || '#home'); } catch (e) { /* ok */ } location.replace('#login'); return; }
   if (!firstReady()) return page('<div class="card"><h1>No questions found</h1><p>The course data files did not load. Check that the data folder is next to index.html.</p></div>');
@@ -2006,6 +2012,7 @@ function route() {
     case 'tips': vTips(); break;
     case 'trophies': vTrophies(); break;
     case 'more': vMore(); break;
+    case 'drills': if (window.DRILLS) window.DRILLS.view(h[1]); else vHome(); break;
     case 'who': vWho(); break;
     case 'login': vLogin(); break;
     case 'cert': vCert(decodeURIComponent(h.slice(1).join('/'))); break;
