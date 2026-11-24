@@ -92,13 +92,102 @@ const fmtSecs = s => s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60 
 
 // ---------------------------------------------------------------- saved state
 const fresh = () => ({ v: 1, settings: { board: 'kent' }, stars: 0, streak: 0, lastDay: null, badges: {}, topic: {}, q: {}, review: {}, history: [], last: null, time: {}, lessons: {}, plan: null, flashDay: null });
-let storageOK = true;
+let storageOK = true, storageFull = false;
+// ---- housekeeping: browser storage (about 5 MB, shared with other sites on the same address) and a cloud copy
+// (at most 1 MB) must not fill up, so older detail is tidied away. Stars, badges, topic levels, settings and the
+// activity in progress are never touched. Older history keeps its summary (date, activity, score, time), so
+// charts, streaks and readiness still work; only the question-by-question detail goes.
+// Question-by-question detail is kept for the newest activities, up to KEEP.items questions in all (always the newest 10
+// activities) and only for the last fullDays days; older ones keep their summary, up to KEEP.hist activities in all.
+const KEEP = { items: 1200, fullDays: 90, hist: 500, qDays: 2, bankDays: 60, review: 400, aiDays: 7, timeDays: 730 };
+function tidy(o, keep) {
+  if (!o || typeof o !== 'object') return o;
+  const now = Date.now(), fullCut = now - KEEP.fullDays * 864e5, keepIds = new Set(keep || []);
+  const seenH = new Set();
+  o.history = (Array.isArray(o.history) ? o.history : []).filter(h => {
+    if (!h || typeof h !== 'object' || (h.id && seenH.has(h.id))) return false;
+    seenH.add(h.id); return true;
+  });
+  let n = 0;
+  o.history.forEach((h, i) => {
+    if (!Array.isArray(h.items)) h.items = [];
+    if (h.lite) { h.items = []; return; }
+    n += h.items.length;
+    if ((i < 10 || n <= KEEP.items) && (h.ts || 0) >= fullCut) { h.items.forEach(x => x && keepIds.add(x.id)); return; }
+    n = Infinity;   // everything older is summarised too, so the detail always covers one unbroken recent stretch
+    o.history[i] = compactEntry(h);
+  });
+  if (o.history.length > KEEP.hist) o.history.length = KEEP.hist;
+  const act = o.active && Array.isArray(o.active.items) ? o.active.items : [];
+  act.forEach(x => x && keepIds.add(x.id));
+  // revision queue: drop broken entries and AI questions that are no longer kept, and keep the newest ones if it is very long
+  const rv = o.review && typeof o.review === 'object' ? o.review : {};
+  Object.keys(rv).forEach(id => { if (!rv[id] || typeof rv[id].due !== 'string' || (id.startsWith('ai-') && !(o.aiq && o.aiq[id]))) delete rv[id]; });
+  const rids = Object.keys(rv);
+  if (rids.length > KEEP.review) rids.sort((a, b) => rv[b].due < rv[a].due ? -1 : rv[b].due > rv[a].due ? 1 : 0).slice(KEEP.review).forEach(id => delete rv[id]);
+  o.review = rv; Object.keys(rv).forEach(id => keepIds.add(id));
+  // AI questions are only needed while history, revision or an activity in progress still uses them (or for a week)
+  if (o.aiq && typeof o.aiq === 'object') {
+    Object.keys(o.aiq).forEach(id => { const t = parseInt((id.split('-')[2] || ''), 36); if (!keepIds.has(id) && !(t > now - KEEP.aiDays * 864e5)) delete o.aiq[id]; });
+    if (o.aip && typeof o.aip === 'object') {
+      const used = new Set(Object.values(o.aiq).map(q => q && q.p).filter(Boolean));
+      Object.keys(o.aip).forEach(sid => { const ps = o.aip[sid] || {}; Object.keys(ps).forEach(pid => { if (!used.has(pid)) delete ps[pid]; }); });
+    }
+  }
+  // per-question counts: generated puzzles get a new random seed each time, so their counts only matter for a day or two
+  // (bank questions, of which there is a fixed number, keep their counts for two months)
+  const qs = o.q && typeof o.q === 'object' ? o.q : {}, qCut = now - KEEP.qDays * 864e5, bankCut = now - KEEP.bankDays * 864e5;
+  Object.keys(qs).forEach(id => {
+    const v = qs[id];
+    if (!v || typeof v !== 'object') delete qs[id];
+    else if (/^g\d*-/.test(id) && !((v.t || 0) >= qCut)) delete qs[id];
+    else if (!((v.t || 0) >= bankCut)) delete qs[id];   // not seen for two months: it can count as fresh again
+    else if (id.startsWith('ai-') && !(o.aiq && o.aiq[id])) delete qs[id];
+  });
+  o.q = qs;
+  // minutes per day older than two years become minutes per month
+  if (o.time && typeof o.time === 'object') {
+    // (whole months only, so two devices always agree on which months are summed up)
+    const mCut = dstr(new Date(now - KEEP.timeDays * 864e5)).slice(0, 7);
+    Object.keys(o.time).forEach(d => { const m = d.slice(0, 7); if (/^\d{4}-\d\d-\d\d$/.test(d) && m < mCut) { o.timeMonths = o.timeMonths || {}; o.timeMonths[m] = (o.timeMonths[m] || 0) + (+o.time[d] || 0); delete o.time[d]; } });
+  }
+  return o;
+}
+// The summary of an older activity: enough for the history list, charts and the parent view.
+function compactEntry(h) {
+  const c = { lite: 1, items: [] };
+  ['id', 'ts', 'day', 'mode', 'subject', 'topic', 'score', 'total', 'secs', 'stars', 'label', 'cfg', 'from', 'mins'].forEach(k => { if (h[k] !== undefined) c[k] = h[k]; });
+  if (!c.day && c.ts) c.day = dstr(new Date(c.ts));
+  return c;
+}
 function load() {
-  try { const r = localStorage.getItem(KEY); if (r) return Object.assign(fresh(), JSON.parse(r)); } catch (e) { storageOK = false; }
+  try {
+    const r = localStorage.getItem(KEY);
+    if (r) { const o = tidy(Object.assign(fresh(), JSON.parse(r))), t = JSON.stringify(o); if (t.length < r.length) try { localStorage.setItem(KEY, t); } catch (e) { /* saved next time */ } return o; }
+  } catch (e) { storageOK = false; }
   return fresh();
 }
-function save() { st.savedAt = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { storageOK = false; } if (sync.user) syncSoon(); }
+function save() {
+  st.savedAt = Date.now();
+  try { localStorage.setItem(KEY, JSON.stringify(st)); storageOK = true; storageFull = false; }
+  catch (e) {
+    // storage full: tidy and try once more before giving up
+    try { tidy(st); localStorage.setItem(KEY, JSON.stringify(st)); storageOK = true; storageFull = false; }
+    catch (e2) { if (storageOK) toast('Progress could not be saved on this device. See Settings.'); storageOK = false; storageFull = /quota/i.test(String(e2 && (e2.name + e2.message))); }
+  }
+  if (sync.user) syncSoon();
+}
+// Space used on this device by every child's progress and this app's other settings.
+function storageUse() { let n = 0; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('elevenplus.')) n += k.length + (localStorage.getItem(k) || '').length; } } catch (e) { /* blocked */ } return n; }
+// The other children's saved progress is tidied too, as they share the same space.
+function tidyAll() {
+  meta.list.forEach(p => {
+    if (p.id === meta.current) return;
+    try { const k = keyFor(p.id), r = localStorage.getItem(k); if (!r) return; const t = JSON.stringify(tidy(JSON.parse(r))); if (t.length < r.length) localStorage.setItem(k, t); } catch (e) { /* leave it as it is */ }
+  });
+}
 let st = load();
+tidyAll();
 if (!meta.pin && st.settings.pin) meta.pin = st.settings.pin;
 saveMeta();
 
@@ -952,7 +1041,7 @@ function finish(redirect) {
   if (isTimed) e.mins = s.parts.slice(0, s.part + 1).reduce((a, p) => a + p.mins, 0);
   if (isTimed && redirect && s.parts.length > 1) e.parts = s.parts.slice(0, s.part + 1).map(p => ({ name: p.name, from: p.from, to: p.to }));
   st.history.unshift(e);
-  if (st.history.length > 400) st.history.length = 400;
+  tidy(st);   // also keeps the history list to its limit
   if (st.lastDay !== today()) { st.streak = st.lastDay === plusDays(-1) ? st.streak + 1 : 1; st.lastDay = today(); }
   st.time[today()] = (st.time[today()] || 0) + secs;
   if (s.topic) st.last = { subject: s.subject, topic: s.topic };
@@ -1746,7 +1835,7 @@ function vResult(id, done) {
     ${br.length > 1 ? `<div class="card tablewrap"><h3>How you did in each topic</h3>
       ${weakHere.length ? `<p class="small">Work on next: <b>${weakHere.map(r => esc(topicOf(r.sid, r.tid).name)).join(', ')}</b>. Read the lesson, then do one exercise.</p>` : '<p class="small"><b>Every topic 70% or more. Excellent!</b></p>'}
       <table><thead><tr><th>Topic</th><th class="num">Score</th><th></th></tr></thead><tbody>${br.map(r => { const tp = topicOf(r.sid, r.tid), p = r.ok / r.n; return `<tr><td>${multi ? subj(r.sid).icon + ' ' : ''}${esc(tp.name)}${bar(p, p >= 0.7 ? 'g' : '')}</td><td class="num">${r.ok}/${r.n}</td><td class="num">${p < 0.7 ? `<a href="#lesson/${r.sid}/${r.tid}">Lesson</a> · <a href="#topic/${r.sid}/${r.tid}">Practise</a>` : '✓'}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
-    <h2>Look back at each question</h2>
+    ${e.lite ? '<div class="card"><p class="muted small">The question-by-question details of older activities are no longer kept on this device, to save space. The score and time are still here.</p></div>' : '<h2>Look back at each question</h2>'}
     ${[...new Set(e.items.map(x => QI[x.id] && QI[x.id].p).filter(Boolean))].map(pid => passageHTML(e.items.map(x => QI[x.id]).find(q => q && q.p === pid), false).replace(/class="gap cur"/g, 'class="gap"')).join('')}
     ${reviewList(e.items)}`);
   if (done) {
@@ -1939,8 +2028,9 @@ function mergeState(a, b) {
   if (!a) return b; if (!b) return a;
   const m = Object.assign(fresh(), a, b);
   const newer = (a.savedAt || 0) >= (b.savedAt || 0) ? a : b;
-  const byId = new Map(); (a.history || []).concat(b.history || []).forEach(h => { if (h && h.id && !byId.has(h.id)) byId.set(h.id, h); });
-  m.history = [...byId.values()].sort((x, y) => y.ts - x.ts).slice(0, 400);
+  // an activity already tidied to its summary on either side stays a summary (it is never filled out again)
+  const byId = new Map(); (a.history || []).concat(b.history || []).forEach(h => { if (h && h.id && (!byId.has(h.id) || (h.lite && !byId.get(h.id).lite))) byId.set(h.id, h); });
+  m.history = [...byId.values()].sort((x, y) => y.ts - x.ts).slice(0, KEEP.hist);
   m.stars = Math.max(a.stars || 0, b.stars || 0);
   const la = a.lastDay || '', lb = b.lastDay || ''; m.lastDay = la >= lb ? a.lastDay : b.lastDay; m.streak = la === lb ? Math.max(a.streak || 0, b.streak || 0) : (la > lb ? a.streak : b.streak);
   m.badges = Object.assign({}, b.badges, a.badges); Object.keys(b.badges || {}).forEach(k => { if (a.badges && a.badges[k] && b.badges[k] < a.badges[k]) m.badges[k] = b.badges[k]; });
@@ -1948,6 +2038,7 @@ function mergeState(a, b) {
   m.q = Object.assign({}, a.q); Object.entries(b.q || {}).forEach(([k, v]) => { if (!m.q[k] || (v.s || 0) > (m.q[k].s || 0)) m.q[k] = v; });
   m.review = Object.assign({}, newer === a ? b.review : a.review, newer.review);
   m.time = Object.assign({}, a.time); Object.entries(b.time || {}).forEach(([k, v]) => { m.time[k] = Math.max(m.time[k] || 0, v); });
+  if (a.timeMonths || b.timeMonths) { m.timeMonths = Object.assign({}, a.timeMonths); Object.entries(b.timeMonths || {}).forEach(([k, v]) => { m.timeMonths[k] = Math.max(m.timeMonths[k] || 0, v); }); Object.keys(m.time).forEach(d => { if (m.timeMonths[d.slice(0, 7)] !== undefined) delete m.time[d]; }); }
   m.lessons = Object.assign({}, a.lessons, b.lessons);
   m.hidden = Object.assign({}, a.hidden, b.hidden);
   const rp = new Map(); (a.reports || []).concat(b.reports || []).forEach(x => { if (x && !rp.has(x.id)) rp.set(x.id, x); }); m.reports = [...rp.values()].slice(0, 100);
@@ -1956,7 +2047,8 @@ function mergeState(a, b) {
   m.settings = Object.assign({}, newer === a ? b.settings : a.settings, newer.settings);
   m.active = newer.active; m.last = newer.last; m.plan = newer.plan; m.rank = Math.max(a.rank || 0, b.rank || 0);
   m.savedAt = Math.max(a.savedAt || 0, b.savedAt || 0);
-  return m;
+  const acts = [a.active, b.active].filter(x => x && Array.isArray(x.items)).map(x => x.items.map(i => i && i.id));   // either device's paused activity
+  return tidy(m, [].concat(...acts));
 }
 // AI questions are left out of the cloud copy to keep it small; everything else is kept.
 const cloudCopy = o => { const c = Object.assign({}, o); delete c.aiq; delete c.aip; return JSON.stringify(c); };
@@ -2258,7 +2350,7 @@ function vSettings(note) {
   const days = Object.keys(st.time).sort().slice(-7);
   page(`<h1>Settings</h1>${note ? `<div class="box eg">${esc(note)}</div>` : ''}
     ${accountCard()}
-    ${storageOK ? '' : '<div class="box watch"><b>Progress cannot be saved in this browser window.</b> Check that private browsing is off, then reload.</div>'}
+    ${storageOK ? '' : storageFull ? '<div class="box watch"><b>Progress could not be saved: the storage space for this website is full on this device.</b> Save a backup file below, then remove children you no longer need or clear the site data of other apps on the same website.</div>' : '<div class="box watch"><b>Progress cannot be saved in this browser window.</b> Check that private browsing is off, then reload.</div>'}
     <div class="card"><label for="board">Target exam</label>
       <select id="board" data-change="board">${Object.keys(BOARDS).map(k => `<option value="${k}" ${k === st.settings.board ? 'selected' : ''}>${esc(BOARDS[k].name)}</option>`).join('')}</select>
       <p class="muted small">${esc(BOARDS[st.settings.board].note)}</p></div>
@@ -2276,6 +2368,7 @@ function vSettings(note) {
       <div class="row"><a class="btn alt" href="#parent">Open parent view</a>${meta.pin ? '<button class="btn ghost" data-act="clearpin">Remove PIN</button>' : ''}</div></div>
     <div class="card"><h3>Time spent (last 7 active days)</h3>${days.length ? `<table><tbody>${days.map(d => `<tr><td>${d.split('-').reverse().join('/')}</td><td class="num">${Math.round(st.time[d] / 60)} min</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">No sessions yet.</p>'}</div>
     <div class="card"><h3>Back up progress</h3><p class="muted small">Progress is stored only in this browser on this device. Save a backup file now and then, or use it to move progress to another device.</p>
+      <p class="muted small" id="storeuse">Progress uses ${Math.max(1, Math.round(storageUse() / 1024)).toLocaleString('en-GB')} KB of space on this device${meta.list.length > 1 ? ` (all ${meta.list.length} children)` : ''}.</p>
       <div class="row"><button class="btn alt" data-act="export">Save a backup file</button><label class="btn alt" style="margin:0">Restore from a backup<input type="file" accept="application/json,.json" data-change="import" hidden></label></div></div>
     <div class="card"><h3>Start again</h3><p class="muted small">This clears all stars, history and progress on this device.</p>
       <button class="btn warn" data-act="reset">${resetArmed ? 'Press again to clear everything' : 'Clear all progress'}</button></div>
@@ -2468,7 +2561,7 @@ const CHANGE = {
     const f = el.files && el.files[0]; if (!f) return;
     const r = new FileReader();
     r.onload = () => {
-      try { const o = JSON.parse(r.result); if (!o || !Array.isArray(o.history) || !o.settings) throw 0; st = Object.assign(fresh(), o); save(); vSettings('Backup restored.'); }
+      try { const o = JSON.parse(r.result); if (!o || !Array.isArray(o.history) || !o.settings) throw 0; st = tidy(Object.assign(fresh(), o)); save(); vSettings('Backup restored.'); }
       catch (e) { vSettings('That file could not be read as a backup. Nothing was changed.'); }
     };
     r.readAsText(f);

@@ -2,3 +2,4 @@ backup-before-enhance/
 .DS_Store
 node_modules/
 www/
+__pycache__/
