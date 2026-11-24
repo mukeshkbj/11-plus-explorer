@@ -2,5 +2,5 @@
 import { cpSync, rmSync, mkdirSync } from 'node:fs';
 rmSync('www', { recursive: true, force: true });
 mkdirSync('www');
-for (const f of ['index.html', 'privacy.html', 'config.js', 'app.js', 'styles.css', 'data', 'icons']) cpSync(f, 'www/' + f, { recursive: true });
+for (const f of ['index.html', 'privacy.html', 'config.js', 'app.js', 'drills.js', 'styles.css', 'drills.css', 'data', 'icons']) cpSync(f, 'www/' + f, { recursive: true });
 console.log('Built www/');
