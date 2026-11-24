@@ -539,3 +539,14 @@ body.gate .foot { display: none; }
 .fig table.carroll td { font-weight: 800; font-size: 1.2rem; min-width: 5rem; }
 .tally { font-family: ui-monospace, monospace; font-weight: 800; letter-spacing: .08em; font-size: 1.15rem; }
 .tally s { text-decoration-thickness: 2px; }
+/* starting test and study plan */
+.placecard { background: linear-gradient(135deg, #e7f5ff, #fff); border: 2px solid #74c0fc; }
+.phasebar { display: flex; gap: 4px; margin: .6rem 0; border-radius: 12px; overflow: hidden; }
+.phasebar div { min-width: 0; padding: .45rem .5rem; font-size: .78rem; display: flex; flex-direction: column; }
+.phasebar b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phasebar .ph-found { background: #e7f5ff; } .phasebar .ph-build { background: #ebfbee; } .phasebar .ph-exam { background: #fff4e6; } .phasebar .ph-final { background: #f3f0ff; }
+.plantable td, .plantable th { padding: .3rem .45rem; vertical-align: top; }
+.plantable td:nth-child(2), .plantable td:nth-child(3), .plantable td:nth-child(5) { white-space: nowrap; }
+.plantable tr.curweek td { background: var(--accent-l); font-weight: 600; }
+.plantable tr.pastweek td { color: var(--muted); }
+@media print { .phasebar div { border: 1px solid #ccc; } .plantable tr.curweek td { background: none; } }
