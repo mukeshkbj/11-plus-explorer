@@ -20,13 +20,15 @@ open 11-plus-explorer/index.html
 ## What's inside
 
 **Learn**
-- 59 topics across the four subjects, each with a lesson, a worked example and a "watch out" tip
+- 65 topics across the four subjects, each with a lesson, a worked example and a "watch out" tip
 - Exercises with hints, full step-by-step methods and adaptive difficulty (it gets harder after three right in a row and easier after two wrong in a row)
 - Topic quizzes, with a star badge for 8 out of 10 or more
 - "Read to me" for questions, explanations and lessons, using the browser's built-in speech
 - A pop-up lesson can be opened in the middle of a question
-- 2,000+ original questions, plus reading passages, poems and cloze texts written for the app
-- Question generators that make endless fresh questions with worked methods: every Maths topic, the letter, number, code and logic topics in Verbal Reasoning, and all ten Non-Verbal Reasoning topics (drawn as pictures)
+- 2,300+ original questions, plus 33 reading passages, poems and cloze texts written for the app
+- Question generators that make endless fresh questions with worked methods, for every Maths, Verbal Reasoning and Non-Verbal Reasoning topic and for English spelling, grammar, punctuation, vocabulary and sentence completion. A built-in list of about 3,600 everyday words powers the word puzzles, and every puzzle is checked so it has exactly one answer
+- Maths includes factors, multiples and primes, probability, Roman numerals, speed and timetables, Venn and Carroll diagrams, line and bar graphs, and tally charts
+- Non-Verbal Reasoning includes fold and punch, complete the symmetry, join the shapes, which figure belongs to the group, cube nets (could and could NOT be made), and diagonal mirror lines
 - 🔥 Challenge practice (hard questions only) for every topic, and Challenge tests for every subject
 - ✨ Optional AI-made exercises and mock papers using your own Anthropic (Claude) or OpenAI API key, set up in the parent view. The key stays on the device and is never included in backups
 - Lessons with a step-by-step method, things to check, common traps, and a "Try one together" practice question

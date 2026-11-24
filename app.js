@@ -490,7 +490,7 @@ function startFocus(scope) {
 function mockSection(key, recent) {
   const used = new Set();
   switch (key) {
-    case 'english': return { name: 'English', mins: scaled(25), qs: passageBlock('english', ['comp_fiction', 'comp_nonfiction', 'comp_poetry'], 10).concat(pickSpread('english', ['spelling', 'punctuation', 'grammar', 'vocabulary', 'synonyms_antonyms', 'sentence_completion'], 14, used, recent)) };
+    case 'english': { const text = passageBlock('english', ['comp_fiction', 'comp_nonfiction', 'comp_poetry'], 10); return { name: 'English', mins: scaled(25), qs: text.concat(pickSpread('english', ['spelling', 'punctuation', 'grammar', 'vocabulary', 'synonyms_antonyms', 'sentence_completion'], 24 - text.length, used, recent)) }; }   // shorter passages are topped up so the section always has 24
     case 'maths': return { name: 'Maths', mins: scaled(25), qs: pickSpread('maths', plainTopics('maths'), 25, used, recent) };
     case 'vr': return { name: 'Verbal reasoning', mins: scaled(20), qs: pickSpread('vr', plainTopics('vr'), 24, used, recent) };
     case 'nvr': return { name: 'Non-verbal reasoning', mins: scaled(12), qs: pickSpread('nvr', ['odd_one_out', 'nvr_sequences', 'analogies', 'matrices', 'nvr_codes', 'belongs_group'], 16, used, recent) };
