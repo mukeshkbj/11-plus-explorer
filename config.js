@@ -5,7 +5,14 @@
 // with the providers listed below. Signing in also keeps progress the same on every device.
 // The web config is not a secret: Firebase security rules protect the data (see docs/LOGIN.md).
 window.ELEVENPLUS_AUTH = {
-  firebase: null,
+  firebase: {
+    apiKey: "AIzaSyCLbaoWCEg911IHg_omv5_khQyrDM2FCQ8",
+    authDomain: "plus-explorer.firebaseapp.com",
+    projectId: "plus-explorer",
+    storageBucket: "plus-explorer.firebasestorage.app",
+    messagingSenderId: "1002919146077",
+    appId: "1:1002919146077:web:d27223a95ff47fd62dd3b4"
+  },
   // firebase: { apiKey: "...", authDomain: "your-project.firebaseapp.com", projectId: "your-project", appId: "..." },
 
   // Buttons on the sign-in page, in order. Each one must also be turned on in
