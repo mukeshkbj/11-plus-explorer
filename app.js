@@ -346,13 +346,13 @@ function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
 function begin(mode, sid, tid, questions, extra) {
   if (S) finish(false);   // a different activity was left unfinished: keep what was answered, then start the new one
   S = Object.assign({ mode, subject: sid, topic: tid || null, items: questions.map(q => ({ q: prep(q), chosen: null })), idx: 0, start: Date.now(), hint: false, msg: null, stars: 0, used: new Set(questions.map(q => q.id)), flags: new Set(), qIdx: null }, extra || {});
-  if (S.parts) startPart(0);
+  if (S.parts) (S.mode === 'mock' ? startWarm : startPart)(0);
   if (location.hash === '#session') renderSession(); else location.hash = '#session';
 }
 // ---- keeping the place: the activity in progress is saved, so leaving the page or closing the app never loses it
 function persist() {
   if (!S) { if (st.active) { delete st.active; save(); } return; }
-  const keep = ['mode', 'subject', 'topic', 'idx', 'start', 'stars', 'target', 'pid', 'parts', 'part', 'partStart', 'deadline', 'elapsed', 'between', 'label', 'cfg', 'tags', 'from', 'warned', 'hard', 'ai'];
+  const keep = ['mode', 'subject', 'topic', 'idx', 'start', 'stars', 'target', 'pid', 'parts', 'part', 'partStart', 'deadline', 'elapsed', 'between', 'label', 'cfg', 'tags', 'from', 'warned', 'hard', 'ai', 'warm'];
   const a = {}; keep.forEach(k => { if (S[k] !== undefined) a[k] = S[k]; });
   a.flags = [...S.flags];
   a.items = S.items.map(i => ({ id: i.q.id, perm: i.q.perm || null, c: i.chosen, s: i.secs || 0, say: i.say || null }));
@@ -410,6 +410,42 @@ function startPart(i) {
   S.part = i; S.idx = S.parts[i].from; S.between = false; S.confirm = false; S.warned = {};
   S.partStart = Date.now(); S.deadline = Date.now() + S.parts[i].mins * 60000;
   stopTimer(); timer = setInterval(tick, 500);
+}
+// ---- mock exams: a short untimed warm-up before each section, like the practice exercise in the real test.
+// The practice questions are kept apart from the paper: they are never scored, recorded or added to history.
+function startWarm(i) {
+  const p = S.parts[i], tops = [], seen = new Set(), picks = [];
+  S.items.slice(p.from, p.to).forEach(it => { const k = tkey(it.q.subject, it.q.topic); if (!it.q.p && !seen.has(k) && ready(it.q.subject) && topicOf(it.q.subject, it.q.topic)) { seen.add(k); tops.push(it.q); } });
+  const avoid = new Set([...S.used]), recent = recentTested(), order = shuffle(tops);
+  for (let k = 0; picks.length < Math.min(3, Math.max(2, order.length)) && k < 9 && order.length; k++) {
+    const t = order[k % order.length], q = randomFresh(pool(t.subject, t.topic, 1).filter(x => !x.p), 1, avoid, recent)[0];
+    if (q) { picks.push(q.id); avoid.add(q.id); }
+  }
+  if (!picks.length) return startPart(i);
+  stopTimer();
+  S.part = i; S.idx = p.from; S.between = true; S.confirm = false;
+  S.warm = { part: i, ids: picks, c: picks.map(() => null), n: 0 };
+}
+function endWarm() { if (!S || !S.warm) return; const i = S.warm.part; S.warm = null; startPart(i); renderSession(); window.scrollTo(0, 0); }
+function renderWarm() {
+  const w = S.warm, part = S.parts[w.part], q = QI[w.ids[w.n]];
+  if (!q) return endWarm();
+  const it = { chosen: w.c[w.n] }, last = w.n + 1 >= w.ids.length, ok = it.chosen === q.a;
+  const startBtn = `<button class="btn" data-act="warmdone">Start the timed section →</button>`;
+  view().classList.remove('wide');
+  page(`<div class="sess-head"><div><span class="pill">✏️ Practice first</span> <span class="muted">${esc(part.name)}${S.parts.length > 1 ? ` · section ${w.part + 1} of ${S.parts.length}` : ''}</span></div>
+    <div class="row"><button class="btn ghost" data-act="warmdone">Skip practice</button></div></div>
+    <div class="box eg small">A few easy practice questions to warm up, like in the real test. <b>No clock, and they do not count.</b> Next: ${part.to - part.from} questions in ${part.mins} minutes.</div>
+    <div class="card" id="qcard" data-qid="${esc(q.id)}"><div class="qnum">Practice question ${w.n + 1} of ${w.ids.length}</div>
+    <div class="qtext">${rich(q.q)}</div>${q.svg ? `<div class="fig">${q.svg}</div>` : ''}
+    <div class="opts ${q.of ? 'pics' : ''}">${optionHTML(q, it, true)}</div>
+    ${it.chosen === null ? '' : `<div class="fb ${ok ? 'ok' : 'try'}" id="fbbox" aria-live="polite"><h3>${ok ? 'Spot on!' : 'Good try!'}</h3>
+      ${ok ? '' : `<p>You chose <b>${showOpt(q, it.chosen)}</b>. The answer is <b>${showOpt(q, q.a)}</b>.</p>`}
+      <p><b>The method:</b></p><ol class="steps">${q.steps.map(x => `<li>${rich(x)}</li>`).join('')}</ol>
+      <div class="row">${last ? startBtn : '<button class="btn" id="next" data-act="warmnext">Next practice question →</button>'}</div></div>`}</div>
+    ${it.chosen === null || !last ? `<p class="row"><button class="btn alt" data-act="warmdone">Skip practice and start the timed section</button></p>` : ''}`);
+  persist();
+  const nx = $('#next') || $('#fbbox .btn'); if (nx) nx.focus({ preventScroll: true });
 }
 function partTime() { return Math.min(S.parts[S.part].mins * 60, Math.round((Date.now() - S.partStart) / 1000)); }
 function endPart() {
@@ -486,9 +522,17 @@ function startFocus(scope) {
   const one = new Set(tops.map(t => t.sid)).size === 1;
   timedSession('test', one ? tops[0].sid : 'mix', 'Weak-spot test', [{ name: 'Weak spots', mins: 10, qs: qs.sort((a, b) => a.d - b.d) }], { k: 'focus', scope });
 }
-// Mock papers follow the Kent Test layout: English and Maths (25 minutes each), then Reasoning in three short sections.
+// Mock papers follow the Kent Test layout. Paper 1: English and Maths (25 minutes each).
+// Paper 2, Reasoning: one verbal reasoning section, then four short non-verbal sections, each on a group of puzzle types.
+const NVR_SECTIONS = {
+  nvr1: { name: 'Non-verbal 1: odd one out, groups and analogies', tids: ['odd_one_out', 'belongs_group', 'analogies'] },
+  nvr2: { name: 'Non-verbal 2: sequences, grids and codes', tids: ['nvr_sequences', 'matrices', 'nvr_codes'] },
+  nvr3: { name: 'Non-verbal 3: reflections, rotations, symmetry and hidden shapes', tids: ['reflections', 'rotations', 'symmetry_complete', 'hidden_shapes'] },
+  nvr4: { name: 'Non-verbal 4: nets, 3D views, fold and punch, joining shapes', tids: ['nets', 'views_3d', 'paper_folding', 'combine_shapes'] }
+};
 function mockSection(key, recent) {
   const used = new Set();
+  if (NVR_SECTIONS[key]) return { name: NVR_SECTIONS[key].name, mins: scaled(MOCK_MINS[key]), qs: pickSpread('nvr', NVR_SECTIONS[key].tids, MOCK_SIZE[key], used, recent) };
   switch (key) {
     case 'english': { const text = passageBlock('english', ['comp_fiction', 'comp_nonfiction', 'comp_poetry'], 10); return { name: 'English', mins: scaled(25), qs: text.concat(pickSpread('english', ['spelling', 'punctuation', 'grammar', 'vocabulary', 'synonyms_antonyms', 'sentence_completion'], 24 - text.length, used, recent)) }; }   // shorter passages are topped up so the section always has 24
     case 'maths': return { name: 'Maths', mins: scaled(25), qs: pickSpread('maths', plainTopics('maths'), 25, used, recent) };
@@ -497,15 +541,17 @@ function mockSection(key, recent) {
     default: return { name: 'Spatial reasoning', mins: scaled(12), qs: pickSpread('nvr', ['reflections', 'rotations', 'hidden_shapes', 'nets', 'views_3d', 'paper_folding', 'symmetry_complete', 'combine_shapes'], 16, used, recent) };
   }
 }
+const REASONING_KEYS = ['vr', 'nvr1', 'nvr2', 'nvr3', 'nvr4'];
 const MOCKS = {
   english: { name: 'English paper', keys: ['english'], sid: 'english' },
   maths: { name: 'Maths paper', keys: ['maths'], sid: 'maths' },
-  reasoning: { name: 'Reasoning paper', keys: ['vr', 'nvr', 'spatial'], sid: 'mix' },
-  full: { name: 'Complete mock exam', keys: ['english', 'maths', 'vr', 'nvr', 'spatial'], sid: 'mix' }
+  reasoning: { name: 'Reasoning paper', keys: REASONING_KEYS, sid: 'mix' },
+  full: { name: 'Complete mock exam', keys: ['english', 'maths'].concat(REASONING_KEYS), sid: 'mix' }
 };
-const MOCK_SIZE = { english: 24, maths: 25, vr: 24, nvr: 16, spatial: 16 };
-const MOCK_MINS = { english: 25, maths: 25, vr: 20, nvr: 12, spatial: 12 };
-const mockReady = kind => MOCKS[kind].keys.every(k => ready(k === 'spatial' ? 'nvr' : k));
+// Paper 2 comes to about an hour: 20 minutes of verbal reasoning, four 8-minute non-verbal sections, and the practice questions.
+const MOCK_SIZE = { english: 24, maths: 25, vr: 24, nvr: 16, spatial: 16, nvr1: 10, nvr2: 10, nvr3: 10, nvr4: 10 };
+const MOCK_MINS = { english: 25, maths: 25, vr: 20, nvr: 12, spatial: 12, nvr1: 8, nvr2: 8, nvr3: 8, nvr4: 8 };
+const mockReady = kind => MOCKS[kind].keys.every(k => ready(k === 'spatial' || NVR_SECTIONS[k] ? 'nvr' : k));
 function startMock(kind) {
   const m = MOCKS[kind];
   if (!mockReady(kind)) return;
@@ -740,7 +786,7 @@ const AIMOCK = {
   maths: { name: 'AI Maths paper', parts: ['maths'] },
   english: { name: 'AI English paper', parts: ['english'] },
   vr: { name: 'AI Verbal reasoning paper', parts: ['vr'] },
-  full: { name: 'AI complete mock exam', parts: ['english', 'maths', 'vr', 'nvr', 'spatial'] }
+  full: { name: 'AI complete mock exam', parts: ['english', 'maths'].concat(REASONING_KEYS) }
 };
 function aiMock(kind, level) {
   const m = AIMOCK[kind]; if (!m) return;
@@ -805,11 +851,12 @@ function finish(redirect) {
   stopTimer(); stamp();
   if (!S) return;
   const s = S; S = null; delete st.active;
+  if (s.warm) { s.part = s.warm.part - 1; s.warm = null; }   // leaving during the practice: only the sections already done count
   const isTimed = !!s.parts;
   if (isTimed && !redirect && !s.between) s.elapsed = (s.elapsed || 0) + Math.min(s.parts[s.part].mins * 60, Math.round((Date.now() - s.partStart) / 1000));
   // a timed paper counts blanks as not yet right; anything else only counts what was answered
   // (if he leaves a timed paper part-way, only the questions he answered are kept)
-  let items = isTimed && redirect ? s.items.slice(0, s.parts[s.part].to) : s.items.filter(i => i.chosen !== null);
+  let items = isTimed && redirect ? s.items.slice(0, s.part >= 0 ? s.parts[s.part].to : 0) : s.items.filter(i => i.chosen !== null);
   if (isTimed && !items.some(i => i.chosen !== null)) items = [];
   if (!items.length) { save(); if (redirect) location.hash = '#home'; return; }
   if (isTimed) items.forEach(i => { if (i.chosen === i.q.a) s.stars++; record(i.q, i.chosen === i.q.a, 'test'); });
@@ -1063,11 +1110,152 @@ function vTests() {
       Object.keys(AIMOCK).map(k => card(`✨ ${esc(AIMOCK[k].name)}`, k === 'full' ? 'The complete exam: English, Maths and Verbal reasoning written by AI, plus Non-verbal reasoning puzzles drawn fresh by the puzzle engine (AI cannot draw the shapes reliably). Allow about two hours.' : 'A full-length timed paper, freshly written.', 'aimock', `data-kind="${k}"`, 'Write it')).join('')
       : `<div class="card"><p class="small">A grown-up can add an AI key in the <a href="#parent">parent view</a> to unlock brand-new AI-written exercises and mock papers.</p></div>`, false) +
     fold('t-mix', '<span class="ft">🔀 10-minute tests: mixed</span>', Object.keys(MIXES).filter(k => MIXES[k].sids.filter(ready).length > 1).map(k => card(`🔀 ${esc(MIXES[k].name)}`, `${count} questions, shared between the subjects.`, 'mix', `data-kind="${k}"`, 'Start')).join(''), false) +
-    fold('t-mock', '<span class="ft">📝 Mock exams</span>', `<p class="muted small">Full-length papers laid out like the real test. Each section has its own clock, and you cannot go back to a section once it is finished. Find a quiet table before you start.</p>` +
-      ['english', 'maths', 'reasoning'].filter(mockReady).map(k => card(`📝 ${esc(MOCKS[k].name)}`, info(k) + (k === 'reasoning' ? ' · three sections: verbal, non-verbal and spatial' : ''), 'mock', `data-kind="${k}"`, 'Start paper')).join('') +
-      (mockReady('full') ? card('🏁 Complete mock exam', `${info('full')} · English, Maths, then the three Reasoning sections, with a break in the middle. Allow about two hours.`, 'mock', 'data-kind="full"', 'Start mock') : ''), false) +
-    (ready('english') ? `<div class="card"><div class="row spread"><div style="flex:1;min-width:220px"><h3>✏️ Writing task</h3><p class="muted small">The real test also includes a piece of writing. It is done on paper and is not marked here. Use the prompts and checklist to practise.</p></div>
-      <a class="btn alt" href="#lesson/english/creative_writing">Open writing prompts</a></div></div>` : ''));
+    fold('t-mock', '<span class="ft">📝 Mock exams</span>', `<p class="muted small">Full-length papers laid out like the real test. Each section has its own clock, and you cannot go back to a section once it is finished. Before each section there are a few untimed practice questions, like in the real test (you can skip them). Find a quiet table before you start.</p>` +
+      ['english', 'maths', 'reasoning'].filter(mockReady).map(k => card(`📝 ${esc(MOCKS[k].name)}`, info(k) + (k === 'reasoning' ? ' · five sections: verbal reasoning, then four non-verbal sections' : ''), 'mock', `data-kind="${k}"`, 'Start paper')).join('') +
+      (mockReady('full') ? card('🏁 Complete mock exam', `${info('full')} · Paper 1 (English and Maths), a break, then Paper 2 (verbal reasoning and four non-verbal sections). Allow about two and a half hours.`, 'mock', 'data-kind="full"', 'Start mock') : ''), false) +
+    (canPrint() ? fold('t-print', '<span class="ft">🖨 Print a paper</span>', `<p class="muted small">A fresh paper to do on paper, like the real test: a cover page, the questions, a separate answer sheet to shade in, and an answer key for a grown-up on the last page.</p>` +
+      PRINTS.filter(mockReady).map(k => card(`🖨 ${esc(MOCKS[k].name)}`, info(k), 'printpaper', `data-kind="${k}"`, 'Make the paper')).join(''), false) : '') +
+    (ready('english') ? `<div class="card"><div class="row spread"><div style="flex:1;min-width:220px"><h3>✏️ Writing task · 40 minutes</h3><p class="muted small">Like the Kent writing task: 10 minutes to plan, then 30 minutes to write. Your writing is saved for a grown-up to read. It is not marked.</p></div>
+      <div class="row"><a class="btn" href="#writing">${st.wtask ? 'Carry on writing' : 'Start'}</a><a class="btn alt" href="#lesson/english/creative_writing">Writing tips</a></div></div></div>` : ''));
+}
+
+// ---------------------------------------------------------------- writing task (40 minutes: 10 to plan, 30 to write)
+// The words are saved as they are typed, so nothing is lost on a reload. Finished pieces go into st.writing for a grown-up to read. Nothing is marked.
+const WT = { plan: 10, write: 30 };
+const cwTopic = () => ready('english') && topicOf('english', 'creative_writing');
+const wPrompts = () => { const t = cwTopic(); return (t && t.extra && t.extra.prompts) || ['Write a story with the title "The Door in the Wall".']; };
+const wChecklist = () => { const t = cwTopic(); return (t && t.extra && t.extra.checklist) || (t && t.lesson && t.lesson.checklist) || ['A plan', 'A strong opening', 'The five senses', 'Paragraphs', 'Spelling and punctuation checked']; };
+const wWords = s => (String(s || '').trim().match(/\S+/g) || []).length;
+let wTimer = null, wSaveT = null;
+function wStop() { if (wTimer) { clearInterval(wTimer); wTimer = null; } if (wSaveT) { clearTimeout(wSaveT); wSaveT = null; save(); } }
+function wTick() {
+  const w = st.wtask; if (!w || location.hash !== '#writing') return wStop();
+  const gone = Math.floor((Date.now() - w.start) / 1000), left = WT.plan * 60 + WT.write * 60 - gone;
+  if (left <= 0) return wFinish();
+  const planning = gone < WT.plan * 60, l = planning ? WT.plan * 60 - gone : left;
+  const el = $('#clock'); if (el) { el.textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'); el.classList.toggle('low', left <= 120); }
+  const ph = $('#wphase');
+  if (ph) { const txt = planning ? `Planning time: ${Math.ceil(l / 60)} min left. Jot ideas in the plan box.` : `Writing time: ${Math.ceil(l / 60)} min left.`; if (ph.dataset.t !== txt) { ph.dataset.t = txt; ph.textContent = txt; } }
+  if (!planning && !w.planned) {
+    w.planned = true; save();
+    toast('⏰ Planning time is up. Start writing your story now!');
+    const say = $('#wsay'); if (say) say.textContent = 'Planning time is up. Start writing now.';
+    const box = $('#wtext'); if (box) box.focus({ preventScroll: true });
+  }
+}
+function wFinish() {
+  const w = st.wtask; if (!w) return;
+  wStop();
+  const secs = Math.min((WT.plan + WT.write) * 60, Math.round((Date.now() - w.start) / 1000));
+  const piece = { id: 'w' + Date.now(), ts: Date.now(), day: today(), prompt: w.prompt, plan: w.plan || '', text: w.text || '', words: wWords(w.text), secs, checks: [] };
+  st.writing = [piece].concat(st.writing || []).slice(0, 60);
+  st.time[today()] = (st.time[today()] || 0) + secs;
+  delete st.wtask; save();
+  location.hash = '#writing/' + piece.id;
+}
+function vWriting(id) {
+  if (id) {
+    const p = (st.writing || []).find(x => x.id === id);
+    if (!p) return vHistory();
+    const list = wChecklist();
+    return page(`<p><a href="#history">← History</a></p><h1>✏️ Writing task</h1>
+      <p class="muted">${fmtWhen(p.ts)} · ${p.words} words · ${fmtSecs(p.secs)}</p>
+      <div class="box eg"><b>Prompt:</b> ${esc(p.prompt)}</div>
+      <div class="card"><h3>Check your writing</h3><p class="small muted">Read your piece again and tick each one you managed.</p>
+        ${list.map((c, i) => `<label class="check"><input type="checkbox" data-change="wcheck" data-id="${esc(p.id)}" data-i="${i}" ${p.checks && p.checks[i] ? 'checked' : ''}> ${esc(c)}</label>`).join('')}</div>
+      ${p.plan.trim() ? `<div class="card"><h3>Plan</h3><div class="wpiece">${esc(p.plan)}</div></div>` : ''}
+      <div class="card"><h3>The writing</h3>${p.text.trim() ? `<div class="wpiece">${esc(p.text)}</div>` : '<p class="muted">Nothing was written this time.</p>'}</div>
+      <p class="small muted">Writing is not marked here. In Kent the writing task is only looked at if a child's scores are borderline or there is an appeal.</p>
+      <div class="row noprint"><a class="btn" href="#writing">Another writing task</a>${canPrint() ? '<button class="btn alt" data-act="print">🖨 Print</button>' : ''}</div>`);
+  }
+  const w = st.wtask;
+  if (!w) {
+    const ps = wPrompts(), pr = ps[promptIdx % ps.length];
+    return page(`<p><a href="#tests">← Tests</a></p><h1>✏️ Writing task</h1>
+      <p>Like the Kent writing task: <b>${WT.plan + WT.write} minutes</b> in all. Spend the first <b>${WT.plan} minutes planning</b>, then <b>${WT.write} minutes writing</b>. Leave a few minutes at the end to check.</p>
+      <div class="card"><h3>Your prompt</h3><div class="box eg"><p style="font-size:1.1rem"><b>${esc(pr)}</b></p></div>
+        <div class="row"><button class="btn" data-act="wstart">Start the ${WT.plan + WT.write} minutes →</button><button class="btn alt" data-act="wprompt">Give me another prompt</button></div></div>
+      <p class="small muted">Your writing is saved as you type, and kept in History for a grown-up to read. The clock keeps running if you leave the page.</p>`);
+  }
+  if (Date.now() - w.start >= (WT.plan + WT.write) * 60000) return wFinish();
+  page(`<div class="sess-head"><div><span class="pill">✏️ Writing task</span> <span class="muted">${WT.plan} min plan + ${WT.write} min write</span></div>
+      <div class="row"><span id="clock" class="clock" aria-label="Time left"></span><button class="btn ghost" data-act="wfinish">I have finished</button></div></div>
+    <div id="wphase" class="pace good"></div><div id="wsay" class="sr" aria-live="assertive"></div>
+    <div class="box eg"><b>Prompt:</b> ${esc(w.prompt)}</div>
+    <div class="card"><label for="wplan"><b>1. Plan</b> <span class="small muted">(opening, build-up, problem, resolution, ending)</span></label>
+      <textarea id="wplan" class="inp wbox" rows="6" data-winput="plan" spellcheck="false">${esc(w.plan || '')}</textarea></div>
+    <div class="card"><label for="wtext"><b>2. Write</b></label>
+      <textarea id="wtext" class="inp wbox" rows="16" data-winput="text" spellcheck="false">${esc(w.text || '')}</textarea>
+      <p class="small muted" id="wcount" aria-live="off">${wWords(w.text)} words</p></div>`);
+  wTick();
+  if (!wTimer) wTimer = setInterval(wTick, 1000);
+}
+document.addEventListener('input', e => {
+  const el = e.target.closest && e.target.closest('[data-winput]'); if (!el || !st.wtask) return;
+  st.wtask[el.dataset.winput] = el.value.slice(0, 30000);
+  if (el.id === 'wtext') { const c = $('#wcount'); if (c) c.textContent = wWords(el.value) + ' words'; }
+  if (wSaveT) clearTimeout(wSaveT);
+  wSaveT = setTimeout(() => { wSaveT = null; save(); }, 400);
+});
+window.addEventListener('beforeunload', () => { if (wSaveT) { clearTimeout(wSaveT); wSaveT = null; save(); } });
+function writingList() {
+  const l = st.writing || [];
+  return l.length ? `<h2>✏️ Writing tasks</h2><div class="card tablewrap"><table><thead><tr><th>When</th><th>Prompt</th><th class="num">Words</th><th></th></tr></thead><tbody>${l.map(p => `<tr><td>${fmtWhen(p.ts)}</td><td>${esc(p.prompt.length > 70 ? p.prompt.slice(0, 68) + '…' : p.prompt)}</td><td class="num">${p.words}</td><td><a href="#writing/${esc(p.id)}">Read</a></td></tr>`).join('')}</tbody></table></div>` : '';
+}
+
+// ---------------------------------------------------------------- printable papers with an answer sheet
+// Built with the same section builders as the mock exams. Options stay in their bank order (A to E never move), so the key matches the print.
+const PRINTS = ['english', 'maths', 'reasoning'];
+let PAPER = null;
+function buildPaper(kind) {
+  const recent = recentTested();
+  let n = 0;
+  const secs = MOCKS[kind].keys.map(k => mockSection(k, recent)).filter(s => s.qs.length).map(s => ({ name: s.name, mins: s.mins, qs: s.qs.map(q => ({ q, n: ++n })) }));
+  return { kind, name: MOCKS[kind].name, secs, total: n };
+}
+function printPassage(sid, pid) {
+  const p = passages(sid)[pid]; if (!p) return '';
+  let n = 0;
+  const body = p.kind === 'poem' ? p.text.split('\n\n').map(v => '<div class="verse">' + v.split('\n').map(l => `<div class="line"><span class="ln">${++n}</span>${esc(l)}</div>`).join('') + '</div>').join('')
+    : p.text.split('\n\n').map(par => '<p>' + esc(par).replace(/\((\d+)\)/g, (m, g) => p.kind === 'cloze' ? `<b>(${g})</b> ______` : m) + '</p>').join('');
+  return `<div class="pp-passage"><h3>${p.kind === 'poem' ? 'Poem' : 'Passage'}: ${esc(p.title)}</h3>${body}</div>`;
+}
+const L5 = 'ABCDE';
+function printQ(x) {
+  const q = x.q;
+  return `<div class="pp-q" data-qid="${esc(q.id)}" data-n="${x.n}"><div class="pp-qn">${x.n}</div><div class="pp-qb"><div class="qtext">${rich(q.q)}</div>${q.svg ? `<div class="fig">${q.svg}</div>` : ''}
+    ${q.of ? `<div class="pp-pics">${q.of.map((f, i) => `<div class="pp-pic" data-l="${L5[i]}"><b>${L5[i]}</b><span class="ofig">${f}</span></div>`).join('')}</div>`
+      : `<ol class="pp-opts">${q.opts.map((o, i) => `<li data-l="${L5[i]}"><b>${L5[i]}</b> <span class="pp-ot">${rich(o)}</span></li>`).join('')}</ol>`}</div></div>`;
+}
+function vPrint(kind) {
+  if (!PRINTS.includes(kind) || !mockReady(kind)) return vTests();
+  if (!PAPER || PAPER.kind !== kind) PAPER = buildPaper(kind);
+  const P = PAPER, mins = P.secs.reduce((a, s) => a + s.mins, 0), range = s => s.qs.length ? `${s.qs[0].n}–${s.qs[s.qs.length - 1].n}` : '';
+  const book = P.secs.map((s, i) => {
+    let lastP = null;
+    const qs = s.qs.map(x => { const pre = x.q.p && x.q.p !== lastP ? printPassage(x.q.subject, x.q.p) : ''; lastP = x.q.p || lastP; return pre + printQ(x); }).join('');
+    return `<section class="pp-page pp-book"><div class="pp-sechead"><h2>Section ${i + 1}: ${esc(s.name)}</h2><p>Questions ${range(s)} · ${s.mins} minutes</p></div>${qs}<p class="pp-stop">${i + 1 < P.secs.length ? 'End of this section. Stop and wait to be told to go on.' : 'End of the paper. Check your answer sheet.'}</p></section>`;
+  }).join('');
+  const sheet = P.secs.map((s, i) => `<div class="pp-sblock"><h3>Section ${i + 1}: ${esc(s.name)}</h3><div class="pp-grid">${s.qs.map(x => `<div class="pp-row" data-n="${x.n}"><span class="pp-rn">${x.n}</span>${[...L5.slice(0, x.q.opts.length)].map(l => `<span class="pp-bub">${l}</span>`).join('')}</div>`).join('')}</div></div>`).join('');
+  const key = P.secs.map((s, i) => `<div class="pp-kblock"><h3>Section ${i + 1}: ${esc(s.name)}</h3><ol class="pp-key">${s.qs.map(x => { const t = topicOf(x.q.subject, x.q.topic); return `<li data-n="${x.n}" value="${x.n}"><b class="pp-kl">${L5[x.q.a]}</b> <span class="small">${esc(t ? t.name : x.q.topic)}</span></li>`; }).join('')}</ol></div>`).join('');
+  page(`<div class="noprint pp-bar"><p><a href="#tests">← Back to Tests</a></p><h1>🖨 ${esc(P.name)}</h1>
+      <p class="muted small">${P.total} questions · ${mins} minutes. Print it, or choose "Save as PDF" in the print window. The answer key for a grown-up is on the last page.</p>
+      <div class="row"><button class="btn" data-act="print">🖨 Print</button><button class="btn alt" data-act="printpaper" data-kind="${kind}">Make a different paper</button></div></div>
+    <div class="paper">
+    <section class="pp-page pp-cover"><p class="pp-brand">11+ Explorer · practice paper</p><h1>${esc(P.name)}</h1><p>Kent Test style (GL Assessment) · multiple choice</p>
+      <div class="pp-lines"><p>Name: <span class="pp-line"></span></p><p>Date: <span class="pp-line short"></span></p></div>
+      <table class="pp-secs"><thead><tr><th>Section</th><th>Questions</th><th>Time allowed</th></tr></thead><tbody>${P.secs.map((s, i) => `<tr><td>${i + 1}. ${esc(s.name)}</td><td>${range(s)}</td><td>${s.mins} minutes</td></tr>`).join('')}<tr><td><b>Total</b></td><td><b>${P.total}</b></td><td><b>${mins} minutes</b></td></tr></tbody></table>
+      <h2>Instructions</h2><ul>
+        <li>Do not open the booklet until you are told to start.</li>
+        <li>Mark your answers on the separate <b>answer sheet</b>, not in this booklet. Shade one letter for each question.</li>
+        <li>If you change your mind, rub out the first answer fully.</li>
+        <li>Each section has its own time. When the time is up, stop and wait.</li>
+        <li>If a question is hard, make your best guess and move on. You can come back if there is time.</li>
+        <li>You may use spare paper for working out. No calculators.</li></ul>
+      <p class="small">For grown-ups: time each section with a clock. The answer key is on the last page, so take it off before the paper is handed over.</p></section>
+    ${book}
+    <section class="pp-page pp-sheet"><h2>Answer sheet · ${esc(P.name)}</h2><p>Name: <span class="pp-line"></span></p><p class="small">Shade one letter for each question, like this: <span class="pp-bub on">A</span></p>${sheet}</section>
+    <section class="pp-page pp-keyp"><h2>Answer key (for grown-ups)</h2><p class="small">${esc(P.name)} · question number, answer letter and topic. Letters match the printed booklet.</p>${key}</section></div>`);
 }
 
 // How an option is shown in feedback and review: text, or its letter plus the little picture.
@@ -1100,11 +1288,12 @@ function renderBetween() {
     <div style="display:flex;justify-content:center;margin-top:.8rem">${buddy(`<b>${esc(done.name)} section finished!</b> Great focus. Take a breath.`, 'happy')}</div>
     <p class="muted">You answered ${got} of ${done.to - done.from} questions. The clock is stopped.</p>
     ${next.rest ? '<div class="box eg"><b>Half-way break.</b> In the real test there is a break here. Have a drink, stretch, and come back when you are ready.</div>' : '<p>Take a few deep breaths before the next section.</p>'}
-    <h2>Next: ${esc(next.name)}</h2><p class="muted">${next.to - next.from} questions · ${next.mins} minutes</p>
+    <h2>Next: ${esc(next.name)}</h2><p class="muted">${next.to - next.from} questions · ${next.mins} minutes${S.mode === 'mock' ? ' · a few practice questions first' : ''}</p>
     <button class="btn big" data-act="startpart" style="max-width:420px;margin:1rem auto 0">Start ${esc(next.name)} →</button></div>`);
 }
 
 function renderSession() {
+  if (S.warm) return renderWarm();
   if (S.between) { stamp(); persist(); return renderBetween(); }
   stamp();
   const it = S.items[S.idx], q = it.q, fb = !S.parts;
@@ -1208,6 +1397,27 @@ function topicBreakdown(e) {
   return Object.values(m).sort((a, b) => a.ok / a.n - b.ok / b.n || b.n - a.n);
 }
 const isTimedEntry = e => e.mode === 'test' || e.mode === 'mock';
+// ---- Kent-style estimated scores for mock papers.
+// THE ONE MAPPING from percentage right to a standardised-style score: a straight line from 0% = 69 to 100% = 141, kept inside 69 to 141.
+// This is only an approximation. Real Kent Test scores are age-standardised against everyone who sat the test that year.
+const KENT = { lo: 69, hi: 141, pass: 106, total: 332 };
+const kentScore = pct => Math.max(KENT.lo, Math.min(KENT.hi, Math.round(KENT.lo + (KENT.hi - KENT.lo) * pct)));
+function kentPanel(e) {
+  if (e.mode !== 'mock' || !e.total) return '';
+  const area = sid => sid === 'english' ? 'English' : sid === 'maths' ? 'Maths' : 'Reasoning', m = {};
+  e.items.forEach(x => { const q = QI[x.id]; if (!q) return; const r = m[area(q.subject)] || (m[area(q.subject)] = { n: 0, ok: 0 }); r.n++; if (x.c === q.a) r.ok++; });
+  const rows = ['English', 'Maths', 'Reasoning'].filter(k => m[k]).map(k => ({ k, n: m[k].n, ok: m[k].ok, s: kentScore(m[k].ok / m[k].n) }));
+  if (!rows.length) return '';
+  const all = rows.length === 3, total = rows.reduce((a, r) => a + r.s, 0), low = rows.filter(r => r.s < KENT.pass);
+  const meets = all && total >= KENT.total && !low.length;
+  const note = all ? (meets ? `<p><b>On this paper the estimate reaches the usual Kent standard</b> (a total of ${KENT.total} or more, with no score below ${KENT.pass}). Brilliant work!</p>`
+    : `<p>The usual Kent standard is a total of ${KENT.total} or more, with no single score below ${KENT.pass}. ${total >= KENT.total ? 'The total is there' : 'This estimate is not there yet'}${low.length ? `, and ${low.map(r => r.k).join(' and ')} ${low.length > 1 ? 'need' : 'needs'} a lift` : ''}. Every mock and every fixed mistake helps.</p>`)
+    : `<p class="small">Each area needs about ${KENT.pass} or more, and the three together ${KENT.total} or more. Try the complete mock exam for a total.</p>`;
+  return `<div class="card tablewrap kent"><h3>📊 Estimated Kent-style scores</h3>
+    <table><thead><tr><th>Area</th><th class="num">Right</th><th class="num">Estimated score</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.k}</td><td class="num">${r.ok}/${r.n}</td><td class="num"><b>${r.s}</b>${r.s < KENT.pass ? ' <span class="small muted">(below ' + KENT.pass + ')</span>' : ''}</td></tr>`).join('')}
+    ${all ? `<tr><td><b>Total</b></td><td></td><td class="num"><b>${total}</b></td></tr>` : ''}</tbody></table>
+    ${note}<p class="small muted">A rough guide only. Scores here run from ${KENT.lo} to ${KENT.hi} and are worked out from the percentage right. Real Kent scores are age-standardised, so they also depend on age and on how everyone else did.</p></div>`;
+}
 function vResult(id, done) {
   const e = st.history.find(h => h.id === id);
   if (!e) return vHistory();
@@ -1240,6 +1450,7 @@ function vResult(id, done) {
     ${actions.length ? `<div class="row">${actions.join('')}</div>` : ''}
     ${e.cfg ? '<p class="small muted">A new test has different questions, picked at random, avoiding ones from your recent tests.</p>' : ''}
     ${e.parts ? `<div class="card tablewrap"><h3>Section scores</h3><table><tbody>${e.parts.map(p => { const its = e.items.slice(p.from, p.to), sc = its.filter(x => QI[x.id] && x.c === QI[x.id].a).length; return `<tr><td>${esc(p.name)}</td><td class="num">${sc}/${its.length}</td><td class="num">${Math.round(100 * sc / its.length)}%</td></tr>`; }).join('')}</tbody></table></div>` : ''}
+    ${kentPanel(e)}
     ${br.length > 1 ? `<div class="card tablewrap"><h3>How you did in each topic</h3>
       ${weakHere.length ? `<p class="small">Work on next: <b>${weakHere.map(r => esc(topicOf(r.sid, r.tid).name)).join(', ')}</b>. Read the lesson, then do one exercise.</p>` : '<p class="small"><b>Every topic 70% or more. Excellent!</b></p>'}
       <table><thead><tr><th>Topic</th><th class="num">Score</th><th></th></tr></thead><tbody>${br.map(r => { const tp = topicOf(r.sid, r.tid), p = r.ok / r.n; return `<tr><td>${multi ? subj(r.sid).icon + ' ' : ''}${esc(tp.name)}${bar(p, p >= 0.7 ? 'g' : '')}</td><td class="num">${r.ok}/${r.n}</td><td class="num">${p < 0.7 ? `<a href="#lesson/${r.sid}/${r.tid}">Lesson</a> · <a href="#topic/${r.sid}/${r.tid}">Practise</a>` : '✓'}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
@@ -1255,7 +1466,7 @@ function vResult(id, done) {
 function vHistory() {
   page(`<h1>History</h1>` + (st.history.length ? `<div class="card tablewrap"><table><thead><tr><th>When</th><th>Activity</th><th>Topic</th><th class="num">Score</th><th class="num">Time</th><th></th></tr></thead><tbody>` +
     st.history.map(e => { const t = e.topic && ready(e.subject) && topicOf(e.subject, e.topic); return `<tr><td>${fmtWhen(e.ts)}</td><td>${esc(MODE[e.mode])}</td><td>${esc(e.label || sname(e))}${t ? ': ' + esc(t.name) : ''}</td><td class="num">${e.score}/${e.total}</td><td class="num">${fmtSecs(e.secs)}</td><td><a href="#history/${e.id}">Review</a></td></tr>`; }).join('') +
-    `</tbody></table></div>` : `<div class="card"><p>Nothing here yet. Every exercise, quiz and test you finish is saved here so you can look back at it.</p><a class="btn" href="#learn">Start learning</a></div>`));
+    `</tbody></table></div>` : `<div class="card"><p>Nothing here yet. Every exercise, quiz and test you finish is saved here so you can look back at it.</p><a class="btn" href="#learn">Start learning</a></div>`) + writingList());
 }
 
 let promptIdx = Math.floor(Math.random() * 12);
@@ -1448,6 +1659,7 @@ function mergeState(a, b) {
   m.lessons = Object.assign({}, a.lessons, b.lessons);
   m.hidden = Object.assign({}, a.hidden, b.hidden);
   const rp = new Map(); (a.reports || []).concat(b.reports || []).forEach(x => { if (x && !rp.has(x.id)) rp.set(x.id, x); }); m.reports = [...rp.values()].slice(0, 100);
+  const wr = new Map(); (a.writing || []).concat(b.writing || []).forEach(x => { if (x && x.id && !wr.has(x.id)) wr.set(x.id, x); }); m.writing = [...wr.values()].sort((x, y) => y.ts - x.ts).slice(0, 60); m.wtask = newer.wtask;
   m.aiq = Object.assign({}, a.aiq, b.aiq); m.aip = Object.assign({}, a.aip, b.aip);
   m.settings = Object.assign({}, newer === a ? b.settings : a.settings, newer.settings);
   m.active = newer.active; m.last = newer.last; m.plan = newer.plan; m.rank = Math.max(a.rank || 0, b.rank || 0);
@@ -1842,6 +2054,7 @@ const ACT = {
   pick: d => {
     if (!S) return;
     const it = S.items[S.idx], i = +d.i;
+    if (S.warm) { if (S.warm.c[S.warm.n] === null) { S.warm.c[S.warm.n] = i; const wq = QI[S.warm.ids[S.warm.n]]; sfx(wq && wq.a === i ? 'right' : 'wrong'); renderWarm(); } return; }
     if (S.between) return;
     if (S.parts) { it.chosen = i; S.confirm = false; sfx('tap'); return renderSession(); }
     if (it.chosen !== null) return;
@@ -1884,7 +2097,13 @@ const ACT = {
     if (!S.confirm && S.items.slice(p.from, p.to).some((i, k) => i.chosen === null || S.flags.has(p.from + k))) { S.confirm = true; return renderSession(); }
     endPart();
   },
-  startpart: () => { if (S && S.between) { startPart(S.part + 1); renderSession(); window.scrollTo(0, 0); } },
+  startpart: () => { if (S && S.between && !S.warm) { (S.mode === 'mock' ? startWarm : startPart)(S.part + 1); renderSession(); window.scrollTo(0, 0); } },
+  warmnext: () => { if (S && S.warm && S.warm.n + 1 < S.warm.ids.length) { S.warm.n++; renderWarm(); window.scrollTo(0, 0); } },
+  warmdone: () => endWarm(),
+  wstart: () => { if (!st.wtask) { const ps = wPrompts(); st.wtask = { prompt: ps[promptIdx % ps.length], start: Date.now(), plan: '', text: '', planned: false }; save(); } vWriting(); window.scrollTo(0, 0); },
+  wprompt: () => { promptIdx++; vWriting(); },
+  wfinish: () => wFinish(),
+  printpaper: d => { PAPER = buildPaper(d.kind); if (location.hash === '#print/' + d.kind) { vPrint(d.kind); window.scrollTo(0, 0); } else location.hash = '#print/' + d.kind; },
   mix: d => startMix(d.kind),
   mock: d => startMock(d.kind),
   flip: () => {
@@ -1951,6 +2170,7 @@ const CHANGE = {
   name: el => { st.settings.name = el.value.trim().slice(0, 20) || null; me().name = st.settings.name || ''; saveMeta(); save(); if (location.hash.startsWith('#cert')) route(); else vSettings('Name saved.'); },
   sound: el => { st.settings.sound = el.checked; save(); chips(); },
   examdate: el => { st.settings.examDate = el.value || null; save(); vSettings(el.value ? 'Exam date saved.' : 'Exam date cleared.'); },
+  wcheck: el => { const p = (st.writing || []).find(x => x.id === el.dataset.id); if (p) { p.checks = p.checks || []; p.checks[+el.dataset.i] = el.checked; save(); } },
   board: el => { st.settings.board = el.value; save(); vSettings('Exam setting saved.'); },
   import: el => {
     const f = el.files && el.files[0]; if (!f) return;
@@ -1985,6 +2205,7 @@ function route() {
   if (h[0] !== 'parent' && h[0] !== 'history') parentOK = false;
   closePop(); if (canSpeak()) speechSynthesis.cancel();
   if (h[0] !== 'session') view().classList.remove('wide');
+  if (h[0] !== 'writing' || h[1]) wStop(); document.body.classList.toggle('printview', h[0] === 'print');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === h[0] || a.dataset.nav === ({ topic: 'learn', lesson: 'learn', session: '', tips: 'more', cert: 'trophies', progress: 'more', history: 'more', parent: 'more', settings: 'more' }[h[0]] ?? h[0])));
   if (h[0] !== 'login') document.body.classList.remove('gate');
   if (h[0] !== 'login' && needLogin()) { try { if (h[0] !== 'who') sessionStorage.setItem('elevenplus.after', location.hash || '#home'); } catch (e) { /* ok */ } location.replace('#login'); return; }
@@ -1994,6 +2215,8 @@ function route() {
     case 'topic': vTopic(h[1], h[2]); break;
     case 'lesson': vLesson(h[1], h[2]); break;
     case 'tests': vTests(); break;
+    case 'writing': vWriting(h[1]); break;
+    case 'print': vPrint(h[1]); break;
     case 'session':
       if (!S) { location.hash = '#home'; return; }
       if (S.parts && !S.between) { if (Date.now() >= S.deadline) { endPart(); break; } if (!timer) timer = setInterval(tick, 500); }

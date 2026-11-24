@@ -351,6 +351,59 @@ label.check input { width: 22px; height: 22px; }
 .tiles.four .tile b { font-size: 1.8rem; display: flex; align-items: center; gap: .3rem; justify-content: center; }
 .tiles.four .tile > span { font-size: .85rem; text-align: center; }
 
+/* ================= writing task, Kent-style scores and printable papers ================= */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+textarea.inp.wbox { width: 100%; display: block; margin-top: .4rem; line-height: 1.6; resize: vertical; font-family: inherit; font-size: 1rem; }
+.wpiece { white-space: pre-wrap; line-height: 1.7; }
+.kent td.num b { font-size: 1.1rem; }
+.paper { background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.45; }
+.pp-page { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 1.4rem 1.6rem; margin: 1rem 0; }
+.pp-brand { text-transform: uppercase; letter-spacing: .08em; font-size: .8rem; color: #555; }
+.pp-cover h1 { font-size: 2rem; margin-top: 1.5rem; }
+.pp-lines p { font-size: 1.1rem; margin: 1.2rem 0; }
+.pp-line { display: inline-block; width: 60%; border-bottom: 1.5px solid #333; height: 1.1em; vertical-align: bottom; }
+.pp-line.short { width: 30%; }
+.pp-secs { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+.pp-secs th, .pp-secs td { border: 1px solid #999; padding: .35rem .55rem; text-align: left; }
+.pp-sechead { border-bottom: 2px solid #222; margin-bottom: .8rem; }
+.pp-sechead h2 { margin: 0 0 .2rem; }
+.pp-q { display: flex; gap: .7rem; padding: .55rem 0; border-bottom: 1px solid #ddd; break-inside: avoid; page-break-inside: avoid; }
+.pp-qn { font-weight: 800; min-width: 2rem; text-align: right; }
+.pp-qb { flex: 1; min-width: 0; }
+.pp-qb .fig { margin: .3rem 0; }
+.pp-qb .fig svg { max-height: 190px; width: auto; }
+.pp-opts { list-style: none; padding: 0; margin: .3rem 0 0; display: flex; flex-wrap: wrap; gap: .2rem 1.4rem; }
+.pp-opts b, .pp-pic b { display: inline-block; min-width: 1.1rem; }
+.pp-pics { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .3rem; }
+.pp-pic { display: flex; align-items: flex-start; gap: .25rem; }
+.pp-pic .ofig { width: 82px; }
+.pp-passage { border: 1px solid #bbb; border-radius: 4px; padding: .6rem .9rem; margin: .6rem 0; break-inside: avoid-page; }
+.pp-passage h3 { margin-top: 0; }
+.pp-passage .line { display: flex; gap: .6rem; }
+.pp-stop { text-align: center; font-weight: 700; margin-top: 1rem; }
+.pp-sblock { margin: .8rem 0; break-inside: avoid; page-break-inside: avoid; }
+.pp-sblock h3 { font-size: .95rem; border-bottom: 1px solid #333; }
+.pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: .15rem 1rem; }
+.pp-row { display: flex; align-items: center; gap: .3rem; padding: .1rem 0; }
+.pp-rn { font-weight: 800; min-width: 1.8rem; text-align: right; margin-right: .2rem; }
+.pp-bub { display: inline-flex; align-items: center; justify-content: center; width: 1.45rem; height: 1.05rem; border: 1.3px solid #333; border-radius: 40%; font-size: .68rem; color: #444; }
+.pp-bub.on { background: #333; color: #fff; }
+.pp-key { columns: 4 9rem; padding-left: 2.2rem; margin: .3rem 0 .8rem; }
+.pp-key li { break-inside: avoid; }
+.pp-kl { display: inline-block; min-width: 1rem; }
+.pp-kblock h3 { font-size: .95rem; border-bottom: 1px solid #333; margin-top: .6rem; }
+@media print {
+  body.printview .top, body.printview .foot, body.printview .resume, body.printview .chips { display: none !important; }
+  body.printview main { padding: 0; max-width: none; }
+  .paper { font-size: 11.5pt; }
+  .pp-page { border: 0; border-radius: 0; padding: 0; margin: 0; break-after: page; page-break-after: always; }
+  .pp-page:last-child { break-after: auto; page-break-after: auto; }
+  .pp-keyp { break-before: page; page-break-before: always; }
+  .pp-cover h1 { margin-top: 3rem; }
+  .pp-bub { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .wbox { border: 1px solid #999; }
+}
+
 /* ================= phones and the iOS / Android app ================= */
 body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); -webkit-tap-highlight-color: transparent; }
 .top { padding-top: calc(.5rem + env(safe-area-inset-top)); }
