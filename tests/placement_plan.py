@@ -242,7 +242,7 @@ async def main():
         mi = next((i for i, l in enumerate(labels) if 'Full mock' in l), None)
         if mi is not None:
             await pg.locator('.weekplan .plan li').nth(mi).locator('button').click(); await pg.wait_for_timeout(300)
-            check('#session' in pg.url and await pg.locator('#clock').count() == 1, 'Go on the mock item starts the mock exam')
+            check('#session' in pg.url and (await pg.locator('#clock').count() == 1 or await pg.locator('button[data-act=warmdone]').count() >= 1), 'Go on the mock item starts the mock exam (clock or practice warm-up)')
             await pg.goto(URL + '#home'); await pg.click('button[data-act=endsession]'); await pg.wait_for_timeout(200); await closepop(pg)
         await unlock_parent(pg); await pg.screenshot(path=f'{SHOTS}/parent_plan_exam.png', full_page=True)
 
