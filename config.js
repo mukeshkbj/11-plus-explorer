@@ -10,7 +10,8 @@ window.ELEVENPLUS_AUTH = {
 
   // Buttons on the sign-in page, in order. Each one must also be turned on in
   // Firebase → Authentication → Sign-in method. Remove any you have not set up.
-  providers: ['google', 'facebook', 'microsoft', 'apple', 'github', 'email'],
+  providers: ['google', 'email'],
+  // Other buttons you can add once they are set up in Firebase: 'facebook', 'microsoft', 'apple', 'github'
 
   // true = a "Use without an account" link is shown, so the app still works without signing in.
   allowGuest: true
