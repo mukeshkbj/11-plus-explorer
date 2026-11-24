@@ -89,7 +89,7 @@ async def main():
         # leaving and coming back keeps the place
         await pg.goto(URL + '#topic/english/spelling'); await pg.click('button[data-act=exercise]'); await pg.wait_for_timeout(150)
         await pg.locator('.opt').first.click(); await pg.wait_for_timeout(50)
-        await pg.reload(); await pg.wait_for_timeout(400)
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(400)
         C.ok('#session' in pg.url and await pg.locator('.opt').count() >= 4, 'an activity in progress survives a reload')
         await pg.goto(URL + '#home'); await pg.wait_for_timeout(150)
         C.ok(await pg.locator('button[data-act=endsession]').count() >= 1 or 'Continue' in await pg.inner_text('#view'), 'Home offers to continue the activity')

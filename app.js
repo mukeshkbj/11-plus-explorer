@@ -162,11 +162,19 @@ function compactEntry(h) {
   return c;
 }
 function load() {
+  // Never replace a child's readable progress with a blank one: if tidying fails, the progress is kept exactly as it was,
+  // and progress that cannot be read at all is copied aside (KEY + '.unreadable') before starting fresh.
+  let r = null;
+  try { r = localStorage.getItem(KEY); } catch (e) { storageOK = false; return fresh(); }
+  if (!r) return fresh();
+  let o;
+  try { o = Object.assign(fresh(), JSON.parse(r)); }
+  catch (e) { try { localStorage.setItem(KEY + '.unreadable', r); } catch (e2) { /* no room */ } return fresh(); }
   try {
-    const r = localStorage.getItem(KEY);
-    if (r) { const o = tidy(Object.assign(fresh(), JSON.parse(r))), t = JSON.stringify(o); if (t.length < r.length) try { localStorage.setItem(KEY, t); } catch (e) { /* saved next time */ } return o; }
-  } catch (e) { storageOK = false; }
-  return fresh();
+    const c = tidy(Object.assign(fresh(), JSON.parse(r))), t = JSON.stringify(c);
+    o = c; if (t.length < r.length) try { localStorage.setItem(KEY, t); } catch (e) { /* saved next time */ }
+  } catch (e) { /* tidying failed: keep the progress untouched */ }
+  return o;
 }
 function save() {
   st.savedAt = Date.now();

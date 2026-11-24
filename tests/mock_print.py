@@ -3,9 +3,9 @@
 import asyncio, json, os, re, sys, time
 from playwright.async_api import async_playwright
 
-APP = 'file:///home/claude/wt-mocks/index.html'
-SHOTS = '/home/claude/shots_agentA'
-CHROME = '/usr/bin/google-chrome'
+APP = 'file://' + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'index.html')
+SHOTS = os.environ.get('SHOTS', '/tmp/11plus-shots')
+CHROME = os.environ.get('CHROME', '/usr/bin/google-chrome')
 
 fails = []
 def check(ok, msg):
@@ -73,7 +73,7 @@ async def main():
         await pg.locator('.opt').first.click(); await pg.wait_for_timeout(100)
         await pg.click('button[data-act=warmnext]'); await pg.wait_for_timeout(100)
         await pg.locator('.opt').nth(1).click(); await pg.wait_for_timeout(100)
-        await pg.reload(); await pg.wait_for_timeout(500)
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(500)
         await go('#session')
         qn = await pg.inner_text('.qnum')
         check(qn.startswith('Practice question 2 of'), f'reload mid-warm-up keeps the place ({qn})')
@@ -108,7 +108,7 @@ async def main():
         check(await kent.count() == 1, 'Kent-style score panel on results')
         ktxt = await kent.inner_text()
         m = re.search(r'Reasoning\s+(\d+)/(\d+)\s+(\d+)', ktxt)
-        ok = bool(m) and int(m.group(3)) == max(69, min(141, round(69 + 72 * int(m.group(1)) / int(m.group(2)))))
+        ok = bool(m) and int(m.group(3)) == max(69, min(141, int(69 + 72 * int(m.group(1)) / int(m.group(2)) + 0.5)))
         check(ok, f'reasoning estimated score follows the 69-141 mapping ({m.groups() if m else ktxt[:80]})')
         check('rough guide' in ktxt.lower() and 'age-standardised' in ktxt, 'panel says it is a rough guide')
         await kent.scroll_into_view_if_needed()
@@ -121,7 +121,7 @@ async def main():
           const items = pickIds('english', 10).concat(pickIds('maths', 10), pickIds('vr', 10));
           s.history.unshift({ id: 'hfull', ts: Date.now(), day: '2026-11-24', mode: 'mock', subject: 'mix', score: items.length, total: items.length, secs: 60, stars: 0, items, label: 'Complete mock exam', mins: 60 });
           localStorage.setItem('elevenplus.v1', JSON.stringify(s)); return true; }""")
-        await pg.reload(); await go('#history/hfull')
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await go('#history/hfull')
         ktxt = await pg.inner_text('.kent')
         check('Total' in ktxt and '423' in ktxt and 'reaches the usual Kent standard' in ktxt, 'complete mock shows total and the 332/106 note')
 
@@ -178,12 +178,12 @@ async def main():
         await pg.locator('#wtext').click(); await pg.keyboard.type('The key was not supposed to fit that door, but it did.')
         await pg.wait_for_timeout(700)
         check('11 words' in await pg.inner_text('#wcount') or '12 words' in await pg.inner_text('#wcount'), 'writing: word count ' + await pg.inner_text('#wcount'))
-        await pg.reload(); await pg.wait_for_timeout(500)
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(500)
         check((await pg.input_value('#wtext')).startswith('The key was not supposed'), 'writing: text survives a reload')
         check('Opening: the key' in await pg.input_value('#wplan'), 'writing: plan survives a reload')
         # move the clock on past the planning time
         await pg.evaluate("() => { const s = JSON.parse(localStorage.getItem('elevenplus.v1')); s.wtask.start -= 601000; localStorage.setItem('elevenplus.v1', JSON.stringify(s)); }")
-        await pg.reload(); await pg.wait_for_timeout(1500)
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(1500)
         toasts = await pg.locator('.toast').all_inner_texts()
         check(any('Planning time is up' in t for t in toasts), 'writing: announces when planning time is up')
         check('Writing time' in await pg.inner_text('#wphase'), 'writing: phase changes to writing')
@@ -201,7 +201,7 @@ async def main():
         # automatic end when the 40 minutes are up
         await go('#writing'); await pg.click('button[data-act=wstart]'); await pg.wait_for_timeout(200)
         await pg.evaluate("() => { const s = JSON.parse(localStorage.getItem('elevenplus.v1')); s.wtask.start -= 2401000; localStorage.setItem('elevenplus.v1', JSON.stringify(s)); }")
-        await pg.reload(); await pg.wait_for_timeout(1500)
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(1500)
         check('#writing/w' in pg.url, 'writing: ends by itself after 40 minutes')
 
         check(not errs, f'no page errors {errs[:3]}')

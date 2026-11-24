@@ -51,11 +51,12 @@ async def main():
         await closepop(pg, 800)
         C.ok('#history/' in pg.url and await pg.locator('details.rev').count() >= 1, 'the AI exercise result can be reviewed')
         C.ok(await pg.locator('button[data-act=again]').count() == 1, 'it offers a new set of questions')
-        await pg.reload(); await pg.wait_for_timeout(500)
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(500)
         C.ok(await pg.locator('details.rev').count() >= 1, 'review of AI questions survives a reload')
         await pg.goto(URL + '#tests'); await pg.wait_for_timeout(100)
         await pg.evaluate("document.querySelectorAll('details.fold').forEach(d => d.open = true)")
         await pg.click('button[data-act=aimock][data-kind=full]'); await pg.wait_for_timeout(1500)
+        if await pg.locator('button[data-act=warmdone]').count(): await pg.click('button[data-act=warmdone] >> nth=0'); await pg.wait_for_timeout(300)   # skip the practice warm-up
         C.ok('#session' in pg.url and await pg.locator('.passage').count() >= 1, 'an AI mock paper with a reading passage starts')
         C.ok(pg.errs == [], f'no page errors {pg.errs[:3]}')
         await b.close()

@@ -6,7 +6,7 @@ from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 URL = 'file://' + ROOT + '/index.html'
-SHOTS = '/home/claude/shots_agentC'
+SHOTS = os.environ.get('SHOTS', '/tmp/11plus-shots')
 AZ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 fails = []
 
@@ -181,7 +181,7 @@ async def run(b, w, h, tag):
     check(not await pg.evaluate('window.DRILLS.running()'), tag + ' back button')
     await pg.goto(URL + '#drills/run'); await pg.wait_for_timeout(300)
     check(pg.url.endswith('#drills'), tag + ' stale run link ' + pg.url)
-    await pg.reload(); await pg.goto(URL + '#drills/done'); await pg.wait_for_timeout(300)
+    await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.goto(URL + '#drills/done'); await pg.wait_for_timeout(300)
     check(pg.url.endswith('#drills'), tag + ' stale done link ' + pg.url)
     # bests table and trophy room
     await pg.wait_for_timeout(300); await pg.wait_for_selector('.dbest tr', state='attached')
@@ -202,7 +202,7 @@ async def run(b, w, h, tag):
 async def main():
     os.makedirs(SHOTS, exist_ok=True)
     async with async_playwright() as p:
-        b = await p.chromium.launch(executable_path='/usr/bin/google-chrome')
+        b = await p.chromium.launch(**({'executable_path': os.environ.get('CHROME', '/usr/bin/google-chrome')} if os.path.exists(os.environ.get('CHROME', '/usr/bin/google-chrome')) else {}))
         await run(b, 390, 844, 'mobile')
         await run(b, 1200, 900, 'desktop')
         await b.close()

@@ -5,7 +5,7 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 URL = 'file://' + os.path.join(os.path.dirname(HERE), 'index.html')
-SHOTS = '/home/claude/shots_agentB'
+SHOTS = os.environ.get('SHOTS', '/tmp/11plus-shots')
 os.makedirs(SHOTS, exist_ok=True)
 KEY = 'elevenplus.v1'
 fails = []
@@ -60,18 +60,18 @@ async def unlock_parent(pg):
 
 async def set_exam(pg, d):
     await pg.evaluate(f"() => {{ const o = JSON.parse(localStorage.getItem('{KEY}')); o.settings.examDate = {json.dumps(d)}; localStorage.setItem('{KEY}', JSON.stringify(o)); }}")
-    await pg.goto(URL + '#home'); await pg.reload(); await pg.wait_for_timeout(300)
+    await pg.goto(URL + '#home'); await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(300)
     await pg.add_style_tag(content='#pop{display:none!important}')
 
 async def main():
     async with async_playwright() as p:
-        b = await p.chromium.launch(executable_path='/usr/bin/google-chrome')
+        b = await p.chromium.launch(**({'executable_path': os.environ.get('CHROME', '/usr/bin/google-chrome')} if os.path.exists(os.environ.get('CHROME', '/usr/bin/google-chrome')) else {}))
         ctx = await b.new_context(viewport={'width': 1100, 'height': 900})
         pg = await ctx.new_page(); errs = []
         pg.on('pageerror', lambda e: errs.append(str(e)))
         await pg.goto(URL); await pg.wait_for_selector('#view h1')
         # use the app without an account (the sign-in page is shown first otherwise)
-        await pg.evaluate("() => { localStorage.setItem('elevenplus.guest', '1'); }"); await pg.goto(URL + '#home'); await pg.reload(); await pg.wait_for_selector('#view h1')
+        await pg.evaluate("() => { localStorage.setItem('elevenplus.guest', '1'); }"); await pg.goto(URL + '#home'); await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_selector('#view h1')
         await pg.add_style_tag(content='#pop{display:none!important}')
 
         # ---- 1. fresh child: the starting test is offered on home
@@ -98,7 +98,7 @@ async def main():
         for k in range(7):
             await note(k); await answer_feedback(pg, pattern(k)); done += 1
         before = await pg.inner_text('.qnum')
-        await pg.reload(); await pg.wait_for_timeout(400); await pg.add_style_tag(content='#pop{display:none!important}')
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(400); await pg.add_style_tag(content='#pop{display:none!important}')
         after = await pg.inner_text('.qnum') if await pg.locator('.qnum').count() else ''
         check(before.split('·')[0].strip() == after.split('·')[0].strip(), f'reload mid-test resumes at the same question ({before.split(chr(10))[0][:20]} / {after.split(chr(10))[0][:20]})')
         await pg.goto(URL + '#home'); await pg.wait_for_timeout(200)
@@ -235,7 +235,7 @@ async def main():
         # exam-practice phase items (set a date ~10 weeks away, forcing a plan made 6 weeks ago)
         await set_exam(pg, plus(30))
         await pg.evaluate(f"() => {{ const o = JSON.parse(localStorage.getItem('{KEY}')); o.planBase.start = (() => {{ const d = new Date(o.planBase.start + 'T12:00:00'); d.setDate(d.getDate() - 70); return d.toISOString().slice(0, 10); }})(); localStorage.setItem('{KEY}', JSON.stringify(o)); }}")
-        await pg.reload(); await pg.wait_for_timeout(300); await pg.add_style_tag(content='#pop{display:none!important}')
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(300); await pg.add_style_tag(content='#pop{display:none!important}')
         labels = await pg.locator('.weekplan .plan li').all_inner_texts()
         print('  exam-phase items:', [l.split('\n')[0] for l in labels], (await pg.inner_text('.weekplan p.small'))[:80])
         check(any('mock' in l.lower() for l in labels) and any('Fix my mistakes' in l for l in labels), 'exam practice week offers a mock and Fix my mistakes')
@@ -248,7 +248,7 @@ async def main():
 
         # plan is deterministic for the same state and date
         await set_exam(pg, scen['medium'])
-        a1 = await pg.inner_text('.weekplan'); await pg.reload(); await pg.wait_for_timeout(300)
+        a1 = await pg.inner_text('.weekplan'); await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(300)
         a2 = await pg.inner_text('.weekplan')
         check(a1 == a2, 'home plan is the same after a reload')
         await pg.screenshot(path=f'{SHOTS}/home_medium.png', full_page=True)
@@ -263,5 +263,7 @@ async def main():
         check(not errs, f'no page errors {errs[:3]}')
         await b.close()
     print('\nFAILURES:', fails if fails else 'none')
+    return fails
 
-asyncio.run(main())
+import sys
+sys.exit(1 if asyncio.run(main()) else 0)

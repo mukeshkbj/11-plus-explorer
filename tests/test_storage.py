@@ -22,7 +22,7 @@ async def seed(pg, items):
     await pg.evaluate("() => { localStorage.clear(); localStorage.setItem('elevenplus.guest', '1'); sessionStorage.setItem('elevenplus.chosen', '1'); }")
     for k in sorted(items, key=lambda k: k != 'elevenplus.profiles'):
         await pg.evaluate("([k, v]) => localStorage.setItem(k, v)", [k, items[k]])
-        await pg.goto(URL + '#home'); await pg.reload(); await pg.wait_for_timeout(500)
+        await pg.reload();   # reload straight away: changing page first would let the app save its old in-memory copy over this await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(500)
 
 async def main():
     C = Checks('storage')
@@ -47,7 +47,7 @@ async def main():
         C.ok(sum(s['time'].values()) == sum(s0['time'].values()), 'minutes practised are kept')
         C.ok(len(s['review']) <= 400, f"revision queue is capped ({len(s['review'])})")
         # tidying twice changes nothing
-        await pg.reload(); await pg.wait_for_timeout(500)
+        await pg.reload(); await pg.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await pg.wait_for_timeout(500)
         s2 = await state(pg)
         C.ok(all(json.dumps(s2[k]) == json.dumps(s[k]) for k in ('history', 'q', 'review', 'aiq', 'time')), 'tidying again changes nothing (idempotent)')
         # every view that reads history
@@ -96,7 +96,7 @@ async def main():
         fakefb.reset()
         A = await device(b, guest=False)
         await seed(A, {'elevenplus.v1': states['elevenplus.v1'], 'elevenplus.profiles': json.dumps({'list': [META['list'][0]], 'current': 'p1'}), 'elevenplus.guest': ''})
-        await A.evaluate("localStorage.removeItem('elevenplus.guest')"); await A.goto(URL + '#login'); await A.reload(); await A.wait_for_timeout(600)
+        await A.evaluate("localStorage.removeItem('elevenplus.guest')"); await A.goto(URL + '#login'); await A.reload(); await A.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await A.wait_for_timeout(600)
         await A.click('[data-act=loginshowemail]'); await A.fill('#sem', 'mum@example.com'); await A.fill('#spw', 'secret123'); await A.click('button[data-act=loginnew]'); await A.wait_for_timeout(2500)
         doc = next((v for k, v in fakefb.DOCS.items() if k.endswith('/children/p1')), None)
         C.ok(doc is not None, 'the child was uploaded')
@@ -108,7 +108,7 @@ async def main():
         await seed(B, {'elevenplus.v1': json.dumps(old), 'elevenplus.profiles': json.dumps({'list': [META['list'][0]], 'current': 'p1'})})
         # put the untidied copy back as it would be on an old app version, then sign in
         await B.evaluate("s => { localStorage.setItem('elevenplus.v1', s); localStorage.removeItem('elevenplus.guest'); }", json.dumps(old))
-        await B.goto(URL + '#login'); await B.reload(); await B.wait_for_timeout(600)
+        await B.goto(URL + '#login'); await B.reload(); await B.wait_for_function("document.querySelector('#view') && document.querySelector('#view').children.length > 0", timeout=15000); await B.wait_for_timeout(600)
         await B.click('[data-act=loginshowemail]'); await B.fill('#sem', 'mum@example.com'); await B.fill('#spw', 'secret123'); await B.click('form[data-submit=loginemail] button[type=submit]'); await B.wait_for_timeout(2500)
         sb = await state(B)
         ids = [h['id'] for h in sb['history']]
