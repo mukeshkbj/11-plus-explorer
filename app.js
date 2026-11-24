@@ -40,7 +40,7 @@ const WEEK = [
   { label: 'Timed test', sid: null, kind: 'test' }
 ];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MODE = { exercise: 'Exercise', quiz: 'Quiz', test: '10-minute test', revision: 'Revision', mock: 'Mock exam', fix: 'Fix my mistakes' };
+const MODE = { exercise: 'Exercise', quiz: 'Quiz', test: '10-minute test', revision: 'Revision', mock: 'Mock exam', fix: 'Fix my mistakes', placement: 'Starting test' };
 const LEVEL = ['', 'Warm-up', 'Stretch', 'Challenge'];
 const PRAISE = ['Spot on!', 'Brilliant!', 'You got it!', 'Great thinking!', 'Exactly right!', 'Super work!', 'Nailed it!'];
 const KINDLY = ['Good try!', 'Nice effort!', 'So close!', 'Good thinking. Let\'s look at this one together.', 'Tricky one. Here\'s the method.'];
@@ -373,7 +373,7 @@ function restore() {
 function sessionWhere() {
   if (!S) return null;
   const part = S.parts && S.parts[S.part], lo = part ? part.from : 0, hi = part ? part.to : S.items.length;
-  const total = S.mode === 'exercise' ? S.target : hi - lo;
+  const total = S.mode === 'exercise' || S.mode === 'placement' ? S.target : hi - lo;
   const name = S.label || (S.topic && topicOf(S.subject, S.topic) ? topicOf(S.subject, S.topic).name : MODE[S.mode]);
   const left = S.parts && !S.between ? Math.max(0, Math.ceil((S.deadline - Date.now()) / 60000)) : null;
   return { name, num: Math.min(total, S.idx - lo + 1), total, left };
@@ -542,6 +542,88 @@ function startHardTest(sid) {
   const used = new Set(), qs = pickSpread(sid, plainTopics(sid), paceCount(), used, recentTested(), 3);
   timedSession('test', sid, B(sid).name + ' challenge test', [{ name: B(sid).name + ' (hard)', mins: 10, qs }], { k: 'hard', sid });
 }
+// ---------------------------------------------------------------- Starting test (placement)
+// A one-off check across all four subjects. Related topics are tested in small groups, two questions each:
+// the first is a Stretch question; if it is right the second is a Challenge, if not a Warm-up.
+// The result sets the starting level of every topic in the group and is kept as a baseline in st.placement.
+const PLACEMENT_GROUPS = [
+  ['maths', 'Number and place value', ['place_value', 'four_ops']],
+  ['maths', 'Fractions, decimals and percentages', ['fractions', 'decimals', 'percentages']],
+  ['maths', 'Factors, sequences and algebra', ['factors', 'sequences', 'algebra']],
+  ['maths', 'Ratio and word problems', ['ratio', 'word_problems']],
+  ['maths', 'Measures, time and money', ['measures', 'time', 'money']],
+  ['maths', 'Shape, area and angles', ['area_perimeter', 'angles', 'shapes']],
+  ['maths', 'Coordinates, data and chance', ['coordinates', 'data', 'probability']],
+  ['english', 'Spelling and punctuation', ['spelling', 'punctuation']],
+  ['english', 'Grammar and sentences', ['grammar', 'sentence_completion']],
+  ['english', 'Word meanings', ['vocabulary', 'synonyms_antonyms']],
+  ['vr', 'Similar and opposite words', ['closest_meaning', 'opposite_meaning', 'multiple_meanings']],
+  ['vr', 'Word groups and links', ['odd_two_out', 'word_connections', 'compound_words']],
+  ['vr', 'Hidden and missing letters', ['insert_letter', 'hidden_word', 'missing_three', 'complete_word']],
+  ['vr', 'Moving and making words', ['move_letter', 'make_word']],
+  ['vr', 'Letter series and codes', ['letter_series', 'letter_connections', 'letter_codes', 'word_number_codes']],
+  ['vr', 'Number puzzles and logic', ['number_series', 'related_numbers', 'complete_sum', 'letters_numbers', 'logic']],
+  ['nvr', 'Odd ones out and groups', ['odd_one_out', 'belongs_group', 'analogies']],
+  ['nvr', 'Sequences, grids and codes', ['nvr_sequences', 'matrices', 'nvr_codes']],
+  ['nvr', 'Reflections and rotations', ['reflections', 'rotations', 'symmetry_complete']],
+  ['nvr', 'Shapes in space', ['hidden_shapes', 'nets', 'views_3d', 'paper_folding', 'combine_shapes']]
+];
+const placeable = (sid, tid) => { const t = topicOf(sid, tid); return !!t && !t.extra && !isPassageTopic(sid, tid) && pool(sid, tid).length > 0; };
+// The groups for this bank: any topic not named above joins the last group of its subject, so new topics are never missed.
+function placementGroups() {
+  const groups = [];
+  SUBJECTS.filter(s => ready(s.id)).forEach(s => {
+    const mine = PLACEMENT_GROUPS.filter(g => g[0] === s.id).map(g => ({ sid: s.id, name: g[1], all: g[2].filter(t => placeable(s.id, t)) })).filter(g => g.all.length);
+    const named = new Set([].concat(...mine.map(g => g.all)));
+    const rest = B(s.id).topics.map(t => t.id).filter(t => !named.has(t) && placeable(s.id, t));
+    if (rest.length) { if (mine.length) mine[mine.length - 1].all.push(...rest); else mine.push({ sid: s.id, name: B(s.id).name, all: rest }); }
+    groups.push(...mine);
+  });
+  // the two topics asked about: the ones seen least, so a retake looks at different topics
+  groups.forEach(g => { const order = g.all.slice().sort((a, b) => ((peek(g.sid, a) || {}).seen || 0) - ((peek(g.sid, b) || {}).seen || 0) || g.all.indexOf(a) - g.all.indexOf(b)); g.tids = [order[0], order[1] || order[0]]; });
+  return groups;
+}
+function placementQ(sid, tid, d, used) {
+  const from = lv => pool(sid, tid, lv).filter(q => !q.p);
+  return randomFresh(from(d), 1, used)[0] || randomFresh(from(2), 1, used)[0] || randomFresh(from(), 1, used)[0];
+}
+function startPlacement() {
+  const groups = placementGroups();
+  if (!groups.length) return;
+  const q = placementQ(groups[0].sid, groups[0].tids[0], 2, new Set());
+  if (!q) return;
+  begin('placement', 'mix', null, [q], { target: groups.length * 2, label: 'Starting test', cfg: { k: 'placement', g: groups } });
+}
+// Adds the next question when he moves on: item 2k is group k's first question, item 2k+1 its follow-up.
+function placementGrow() {
+  const g = S.cfg && S.cfg.g, n = S.items.length;
+  if (!g) return;
+  const gi = Math.floor(n / 2);
+  if (gi >= g.length) return;
+  const grp = g[gi];
+  let q;
+  if (n % 2) { const prev = S.items[n - 1]; q = placementQ(grp.sid, grp.tids[1], prev.chosen === prev.q.a ? 3 : 1, S.used); }
+  else q = placementQ(grp.sid, grp.tids[0], 2, S.used);
+  q = q || grp.all.map(t => placementQ(grp.sid, t, 2, S.used)).find(Boolean);
+  if (!q) return;
+  S.used.add(q.id); S.items.push({ q: prep(q), chosen: null });
+}
+// Sets each topic's starting level from the results and keeps a baseline.
+function placementApply(e, cfg) {
+  const groups = (cfg && cfg.g) || [], res = [];
+  groups.forEach((g, gi) => {
+    const a = e.items[gi * 2], b = e.items[gi * 2 + 1];
+    if (!a || !QI[a.id]) return;
+    const r1 = a.c === QI[a.id].a ? 1 : 0, r2 = b && QI[b.id] ? (b.c === QI[b.id].a ? 1 : 0) : null;
+    const level = r1 && r2 ? 3 : r1 ? 2 : 1;
+    g.all.forEach(tid => { const t = ts(g.sid, tid); t.level = level; t.up = 0; t.down = 0; });
+    res.push({ sid: g.sid, name: g.name, all: g.all, tested: g.tids, r: r2 === null ? [r1] : [r1, r2], level });
+  });
+  if (!res.length) return;
+  st.placement = { day: today(), ts: e.ts, hid: e.id, score: e.score, total: e.total, groups: res, partial: res.length < groups.length };
+  delete st.planBase;   // the study plan is rebuilt around the new results
+}
+const placementDone = () => !!(st.placement && st.placement.groups && (!st.placement.partial || st.placement.groups.length >= 10));
 
 // ---------------------------------------------------------------- AI-made questions (optional, uses the family's own API key)
 // The key is kept only in this browser (separately from progress, so it is never in a backup file) and is sent only to the AI company chosen.
@@ -776,6 +858,7 @@ function regenerate(cfg) {
   else if (cfg.k === 'aiex') aiExercise(cfg.sid, cfg.tid, cfg.level);
   else if (cfg.k === 'aimock') aiMock(cfg.kind, cfg.level);
   else if (cfg.k === 'aiset') aiPractice(cfg.sid, cfg.level, cfg.weakOnly);
+  else if (cfg.k === 'placement') startPlacement();
 }
 function startRevision() {
   const ids = shuffle(dueList()).slice(0, 15);
@@ -839,9 +922,10 @@ function finish(redirect) {
   if (s.cfg && s.cfg.k === 'focus' && redirect && pct >= 0.7) award('focus1');
   if (s.mode === 'mock' && redirect && s.part + 1 === s.parts.length) award('mock1');
   if (s.mode === 'mock' && s.parts.length > 1 && s.part + 1 === s.parts.length && pct >= 0.8) award('mock80');
+  if (s.mode === 'placement') placementApply(e, s.cfg);
   checkAwards();
   save();
-  if (redirect) location.hash = '#history/' + e.id + '/done';
+  if (redirect) location.hash = s.mode === 'placement' ? '#placement/done' : '#history/' + e.id + '/done';
 }
 
 // ---------------------------------------------------------------- views
@@ -875,8 +959,216 @@ function planSteps() {
   return steps;
 }
 
+// ---------------------------------------------------------------- study plan: week by week to the exam date
+// Weeks run Monday to Sunday. The plan is worked out from the exam date, the starting-test results and accuracy,
+// and the day it was made (st.planBase), so it stays the same from one visit to the next.
+const PHASES = {
+  found: { name: 'Foundations', icon: '🧱', kid: 'Learning every topic', parent: 'Learn every topic: read the lesson, do the exercise, then the quiz. One 10-minute test a week.', sessions: 5, mins: 75 },
+  build: { name: 'Build', icon: '🏗️', kid: 'Getting stronger', parent: 'Topic quizzes on weak spots, a weak-spot test and 10-minute tests to make every topic secure.', sessions: 5, mins: 100 },
+  exam: { name: 'Exam practice', icon: '📝', kid: 'Practising like the real test', parent: 'A full mock exam each week under exam conditions, timed papers, and Fix my mistakes after every paper.', sessions: 5, mins: 180 },
+  final: { name: 'Final weeks', icon: '🌟', kid: 'Nearly there', parent: 'Lighter practice: a shorter paper, revision and weak spots. Rest the day before the exam.', sessions: 4, mins: 90 }
+};
+const dOf = s => new Date(s + 'T12:00:00');
+const addD = (s, n) => { const d = dOf(s); d.setDate(d.getDate() + n); return dstr(d); };
+const dayDiff = (a, b) => Math.round((dOf(b) - dOf(a)) / 864e5);
+const mondayOf = s => addD(s, -((dOf(s).getDay() + 6) % 7));
+const fmtDay = s => dOf(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const PLACE_SCORE = [0.6, 0.4, 0.65, 0.85];
+// How secure a topic looks now: recent accuracy once there are a few answers, otherwise the starting-test level.
+function planScore(sid, tid) {
+  const p = peek(sid, tid);
+  if (p && p.seen >= 3) return accuracy(sid, tid);
+  const g = st.placement && (st.placement.groups || []).find(x => x.sid === sid && x.all.includes(tid));
+  return g ? PLACE_SCORE[g.level] : 0.6;
+}
+const planTopicList = () => [].concat(...SUBJECTS.filter(s => ready(s.id)).map(s => B(s.id).topics.filter(t => !t.extra && pool(s.id, t.id).length).map((t, i) => ({ sid: s.id, tid: t.id, name: t.name, i }))));
+// Foundations order: weakest first within each subject, with the subjects shared out evenly from week to week.
+function foundationOrder() {
+  const by = {};
+  planTopicList().forEach(t => { (by[t.sid] = by[t.sid] || []).push(Object.assign(t, { sc: planScore(t.sid, t.tid) })); });
+  Object.values(by).forEach(l => l.sort((a, b) => a.sc - b.sc || a.i - b.i));
+  const out = [], taken = {}, sids = Object.keys(by);
+  sids.forEach(k => { taken[k] = 0; });
+  for (;;) {
+    const left = sids.filter(k => taken[k] < by[k].length);
+    if (!left.length) break;
+    const k = left.sort((a, b) => taken[a] / by[a].length - taken[b] / by[b].length || sids.indexOf(a) - sids.indexOf(b))[0];
+    out.push(tkey(k, by[k][taken[k]++].tid));
+  }
+  return out;
+}
+function ensurePlanBase() {
+  const key = (st.settings.examDate || 'none') + '|' + (st.placement ? st.placement.ts : '');
+  if (!st.planBase || st.planBase.key !== key) { st.planBase = { key, start: mondayOf(today()), order: foundationOrder() }; save(); }
+  return st.planBase;
+}
+// Phase lengths share out the weeks left: Foundations about 45%, Build 30%, Exam practice 25%, and one or two Final weeks.
+// With under six weeks before the final stretch there is no time to learn everything first, so it goes straight to Build.
+function phaseLengths(W) {
+  const final = W >= 12 ? 2 : W >= 2 ? 1 : W;
+  const R = W - final;
+  if (R <= 0) return { found: 0, build: 0, exam: 0, final };
+  if (R < 6) { const build = Math.ceil(R / 2); return { found: 0, build, exam: R - build, final }; }
+  const found = Math.round(R * 0.45), build = Math.round(R * 0.3);
+  return { found, build, exam: R - found - build, final };
+}
+function buildPlan(base, examDate, now) {
+  now = now || today();
+  if (!examDate) return { status: 'nodate' };
+  const days = dayDiff(now, examDate);
+  if (days < 0) return { status: 'past', examDate, days };
+  const start = base && base.start && base.start <= now ? base.start : mondayOf(now);
+  const W = dayDiff(start, mondayOf(examDate)) / 7 + 1;
+  const len = phaseLengths(W), keys = ['found', 'build', 'exam', 'final'];
+  const weeks = [], all = planTopicList(), known = new Set(all.map(t => tkey(t.sid, t.tid)));
+  const order = ((base && base.order) || []).filter(k => known.has(k));
+  all.forEach(t => { const k = tkey(t.sid, t.tid); if (!order.includes(k)) order.push(k); });
+  let k = 0;
+  keys.forEach(ph => { for (let j = 0; j < len[ph]; j++, k++) weeks.push({ n: k + 1, phase: ph, j, of: len[ph], from: addD(start, 7 * k), to: addD(start, 7 * k + 6) < examDate ? addD(start, 7 * k + 6) : examDate }); });
+  const cur = Math.max(0, weeks.findIndex(w => w.from <= now && now <= w.to));
+  // Foundations: every topic once, shared evenly over the Foundations weeks
+  weeks.filter(w => w.phase === 'found').forEach(w => { w.topics = order.slice(Math.floor(w.j * order.length / w.of), Math.floor((w.j + 1) * order.length / w.of)); });
+  // Later weeks: the weakest topics right now, a different few each week ahead
+  const ranked = weakTopics(SUBJECTS.map(s => s.id), 999).map(t => Object.assign(t, { sc: planScore(t.sid, t.tid) })).sort((a, b) => a.sc - b.sc || a.i - b.i).map(t => tkey(t.sid, t.tid));
+  weeks.forEach((w, i) => {
+    if (w.phase === 'found' || !ranked.length) return;
+    const n = w.phase === 'build' ? 3 : 2, off = Math.max(0, i - cur) * n;
+    w.topics = i < cur ? [] : [...Array(Math.min(n, ranked.length))].map((_, x) => ranked[(off + x) % ranked.length]);
+    if (i === cur && base && base.wk && base.wk.from === w.from && base.wk.phase === w.phase) w.topics = base.wk.topics.slice();   // kept for the whole week
+  });
+  weeks.forEach(w => { const p = PHASES[w.phase]; w.sessions = p.sessions; w.mins = p.mins; w.exam = w.to === examDate; if (w.exam) { w.sessions = 3; w.mins = 60; } });
+  return { status: 'ok', days, examDate, start, weeks, cur, len };
+}
+function studyPlan() { return buildPlan(ensurePlanBase(), st.settings.examDate, today()); }
+const tname = k => { const [sid, tid] = k.split('/'), t = ready(sid) && topicOf(sid, tid); return t ? t.name : tid; };
+// The activities for one week, each with a Go action, ticked from the history of that week.
+function weekItems(plan, w) {
+  const now = today();
+  if (!w) { const from = mondayOf(now); w = { n: 0, phase: 'build', j: 0, of: 1, from, to: addD(from, 6), topics: null, sessions: PHASES.build.sessions, mins: PHASES.build.mins }; }
+  const hist = st.history.filter(h => h.day >= w.from && h.day <= w.to);
+  const did = k => { const [sid, tid] = k.split('/'); return hist.some(h => (h.mode === 'exercise' || h.mode === 'quiz') && h.subject === sid && h.topic === tid); };
+  const quizDone = k => { const [sid, tid] = k.split('/'); return hist.some(h => h.mode === 'quiz' && h.subject === sid && h.topic === tid); };
+  const weakNow = () => weakTopics(SUBJECTS.map(s => s.id), 6).sort((a, b) => planScore(a.sid, a.tid) - planScore(b.sid, b.tid) || a.i - b.i).map(t => tkey(t.sid, t.tid));
+  let focus = (w.topics && w.topics.length ? w.topics : weakNow()).filter(k => ready(k.split('/')[0]));
+  // this week's weak-spot topics are fixed when the week is first shown, so items do not move as scores change
+  const b = st.planBase;
+  if (w.phase !== 'found' && b && w.from <= now && now <= w.to) {
+    if (b.wk && b.wk.from === w.from && b.wk.phase === w.phase) focus = b.wk.topics.filter(k => ready(k.split('/')[0]));
+    else { b.wk = { from: w.from, phase: w.phase, topics: focus.slice(0, 3) }; save(); }
+  }
+  const subs = SUBJECTS.filter(s => ready(s.id)), wsid = subs[Math.abs(w.n || dayDiff('2026-01-05', w.from) / 7) % subs.length].id;
+  const kinds = ['maths', 'english', 'reasoning'].filter(k => MOCKS[k] && mockReady(k)), kind = kinds.length ? kinds[(w.n || 0) % kinds.length] : null;
+  const mockDone = kd => hist.some(h => h.mode === 'mock' && h.cfg && h.cfg.kind === kd);
+  const items = [];
+  if (!placementDone()) items.push({ label: 'Take your starting test (about 20 minutes)', act: 'placement', done: false });
+  const testItem = () => ({ label: `A 10-minute ${subj(wsid).name} test`, act: 'test', data: { sid: wsid }, done: hist.some(h => h.mode === 'test' && h.subject === wsid) });
+  const focusItem = () => ({ label: 'A weak-spot test on your trickiest topics', act: 'focus', data: { scope: 'all' }, done: hist.some(h => h.cfg && h.cfg.k === 'focus') });
+  const fixItem = () => {
+    const e = st.history.find(h => isTimedEntry(h) && h.items.some(x => QI[x.id] && x.c !== QI[x.id].a));
+    return e ? { label: 'Fix my mistakes from your last paper', act: 'fix', data: { id: e.id }, done: hist.some(h => h.mode === 'fix') } : { label: 'Fix my mistakes after your paper', href: '#tests', done: hist.some(h => h.mode === 'fix') };
+  };
+  const paperItem = light => kind && ({ label: `${light ? 'One shorter paper' : 'A timed paper'}: ${MOCKS[kind].name}`, act: 'mock', data: { kind }, done: mockDone(kind) });
+  if (w.phase === 'found') {
+    // the first three topics of the week stay in place (ticked when done); once all three are done the next one is added
+    const shown = focus.slice(0, 3), more = shown.every(did) && focus.find(k => !did(k));
+    shown.concat(more ? [more] : []).forEach(k => { const [sid, tid] = k.split('/'); items.push({ label: `${k === more ? 'Bonus: learn' : 'Learn'} ${tname(k)}: read the lesson, then do the exercise`, href: `#lesson/${sid}/${tid}`, done: did(k) }); });
+    items.push(testItem());
+  } else if (w.phase === 'build') {
+    focus.slice(0, 2).forEach(k => { const [sid, tid] = k.split('/'); items.push(isPassageTopic(sid, tid) ? { label: `Practise ${tname(k)}`, act: 'exercise', data: { sid, tid }, done: did(k) } : { label: `Quiz: ${tname(k)}`, act: 'quiz', data: { sid, tid }, done: quizDone(k) }); });
+    items.push(focusItem(), testItem());
+  } else if (w.phase === 'exam') {
+    if (MOCKS.full && mockReady('full')) items.push({ label: 'Full mock exam, like the real test (with a break)', act: 'mock', data: { kind: 'full' }, done: mockDone('full') });
+    const p = paperItem(false); if (p) items.push(p);
+    items.push(fixItem(), focusItem());
+  } else {
+    const p = paperItem(true); if (p) items.push(p);
+    items.push({ label: 'Revision: your try-again questions and flashcards', href: '#revise', done: hist.some(h => h.mode === 'revision') || (st.flashDay >= w.from && st.flashDay <= w.to) });
+    items.push(focusItem());
+    if (w.exam) items.push({ label: 'Read the exam tips together', href: '#tips', done: false });
+    else if (focus[0]) { const [sid, tid] = focus[0].split('/'); items.push({ label: `Quiz: ${tname(focus[0])}`, act: 'quiz', data: { sid, tid }, done: quizDone(focus[0]) }); }
+  }
+  return items.slice(0, 5);
+}
+const itemHTML = s => `<li><span class="tick ${s.done ? 'done' : ''}">${s.done ? '✓' : ''}</span><span class="grow">${esc(s.label)}</span>
+  ${s.href ? `<a class="btn alt noprint" href="${s.href}">${s.done ? 'Again' : 'Go'}</a>` : `<button class="btn alt noprint" data-act="${s.act}" ${Object.entries(s.data || {}).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}>${s.done ? 'Again' : 'Go'}</button>`}</li>`;
+const weekMins = w => { let m = 0; for (let d = w.from; d <= w.to; d = addD(d, 1)) m += st.time[d] || 0; return Math.round(m / 60); };
+// Home page card, in words for the child.
+function weekCardHTML() {
+  const p = studyPlan(), w = p.status === 'ok' ? p.weeks[p.cur] : null, items = weekItems(p, w), done = items.filter(s => s.done).length;
+  const ph = PHASES[w ? w.phase : 'build'], mins = weekMins(w || { from: mondayOf(today()), to: addD(mondayOf(today()), 6) });
+  const wd = new Date().getDay();
+  const line = w ? `${ph.icon} <b>${esc(ph.kid)}</b> · week ${w.n} of ${p.weeks.length} · aim for ${w.sessions} sessions, about ${w.mins} minutes (${mins} so far)`
+    : `${p.status === 'past' ? 'The exam date has passed. ' : ''}Ask a grown-up to add your exam date in the <a href="#parent">parent view</a>, and Ollie will plan every week until the test.`;
+  const rest = w && w.exam && p.days >= 1 ? `<p class="small">🛌 <b>The day before the exam is a rest day.</b> No practice: play, relax and get an early night.</p>` : '';
+  return `<div class="card weekplan"><div class="row spread"><h2 style="margin:0">This week</h2><span class="pill ${done === items.length ? 'gold' : ''}">${done === items.length ? '🎉 All done!' : `${done} of ${items.length} done`}</span></div>
+    <p class="small muted">${line}</p>${rest}
+    <ul class="plan">${items.map(itemHTML).join('')}</ul>
+    <div class="week" style="margin-top:.7rem">${WEEK.map((x, i) => `<div class="${i === wd ? 'today' : ''}"><b>${DAYS[i]}</b>${esc(x.label)}</div>`).join('')}</div></div>`;
+}
+// Parent view: the whole plan, with a date box when the exam date is missing or past.
+function planCardHTML() {
+  const p = studyPlan();
+  const dateBox = why => `<div class="card"><h3>🗓 Study plan</h3><p>${why}</p>
+    <label for="planexam">Exam date</label><input id="planexam" class="inp" type="date" value="${esc(st.settings.examDate || '')}" data-change="planexam" style="max-width:240px">
+    <p class="small muted">The Kent Test is usually in the first or second week of September at the start of Year 6. Check your council's website for the exact date.</p></div>`;
+  if (p.status === 'nodate') return dateBox('Add the exam date and the app will build a week-by-week plan from today to the test.');
+  if (p.status === 'past') return dateBox(`The exam date (${dOf(p.examDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}) has passed. Enter the next exam date to build a new plan.`);
+  const cw = p.weeks[p.cur], segs = ['found', 'build', 'exam', 'final'].filter(k => p.len[k]);
+  const short = !p.len.found ? `<p class="small">With ${p.weeks.length} week${p.weeks.length > 1 ? 's' : ''} to go there is not time to learn every topic first, so the plan goes straight to practice on the weakest topics. Use the lessons whenever a topic feels new.</p>` : '';
+  const perWeek = p.len.found ? Math.ceil(planTopicList().length / p.len.found) : 0;
+  const row = (w, i) => { const ph = PHASES[w.phase], hist = st.history.filter(h => h.day >= w.from && h.day <= w.to), m = weekMins(w);
+    return `<tr class="${i === p.cur ? 'curweek' : i < p.cur ? 'pastweek' : ''}"><td class="num">${w.n}</td><td>${fmtDay(w.from)} to ${fmtDay(w.to)}</td><td>${ph.icon} ${esc(ph.name)}</td>
+      <td class="small">${w.topics && w.topics.length ? w.topics.map(k => esc(tname(k))).join(', ') : i < p.cur ? '' : 'Weakest topics at the time'}${w.exam ? ' · <b>exam week: rest the day before</b>' : ''}</td>
+      <td class="num small">${w.sessions} × · ${w.mins} min</td><td class="num small">${i <= p.cur ? `${hist.length} · ${m} min` : ''}</td></tr>`; };
+  return `<div class="card plancard"><h3>🗓 Study plan to the exam</h3>
+    <p>${p.days === 0 ? '<b>Exam day today.</b>' : `<b>${p.days} day${p.days > 1 ? 's' : ''}</b> (${p.weeks.length} week${p.weeks.length > 1 ? 's' : ''}) to the exam on ${dOf(p.examDate).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.`} Now: <b>${PHASES[cw.phase].icon} ${esc(PHASES[cw.phase].name)}</b>, week ${cw.j + 1} of ${cw.of}.</p>
+    <div class="phasebar">${segs.map(k => `<div class="ph-${k}" style="flex:${p.len[k]}"><b>${PHASES[k].icon} ${esc(PHASES[k].name)}</b><span>${p.len[k]} wk</span></div>`).join('')}</div>
+    <ul class="small">${segs.map(k => `<li><b>${esc(PHASES[k].name)}:</b> ${esc(PHASES[k].parent)}${k === 'found' ? ` About ${perWeek} topic${perWeek > 1 ? 's' : ''} a week.` : ''}</li>`).join('')}</ul>${short}
+    ${placementDone() ? '' : '<p class="small">💡 The starting test has not been taken yet. Once it is done, the plan puts the weakest topics first.</p>'}
+    <h3 style="margin-top:1rem">This week (${fmtDay(cw.from)} to ${fmtDay(cw.to)})</h3><ul class="plan">${weekItems(p, cw).map(itemHTML).join('')}</ul>
+    <h3 style="margin-top:1rem">Week by week</h3>
+    <div class="tablewrap"><table class="plantable"><thead><tr><th class="num">Wk</th><th>Dates</th><th>Phase</th><th>Focus topics</th><th class="num">Target</th><th class="num">Done</th></tr></thead><tbody>${p.weeks.map(row).join('')}</tbody></table></div>
+    <div class="row noprint" style="margin-top:.6rem"><label for="planexam" class="small" style="margin:0">Exam date</label><input id="planexam" class="inp" type="date" value="${esc(st.settings.examDate)}" data-change="planexam" style="max-width:200px"></div></div>`;
+}
+// Parent view: the starting-test baseline.
+function placementCardHTML() {
+  const pl = st.placement;
+  if (!pl) return `<div class="card"><h3>🧭 Starting test</h3><p class="small">Not taken yet. It takes about 20 to 25 minutes, sets the starting level of every topic and puts the weakest topics first in the plan.</p><a class="btn alt noprint" href="#placement">Open the starting test</a></div>`;
+  const strong = pl.groups.filter(g => g.level === 3), work = pl.groups.filter(g => g.level === 1);
+  const names = l => l.map(g => `${subj(g.sid).icon} ${esc(g.name)}`).join(', ');
+  return `<div class="card"><h3>🧭 Starting test: ${dOf(pl.day).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</h3>
+    <p>${pl.score} of ${pl.total} right${pl.partial ? ' (stopped early, so some topics start at Warm-up)' : ''}.</p>
+    <p class="small"><b>Strengths:</b> ${strong.length ? names(strong) : 'none yet at Challenge level'}</p>
+    <p class="small"><b>To work on:</b> ${work.length ? names(work) : 'nothing stood out. A great start!'}</p>
+    <div class="row noprint"><a class="btn ghost" href="#history/${pl.hid}">See the answers</a><a class="btn ghost" href="#placement">Retake the starting test</a></div></div>`;
+}
+// The starting test page: an invitation before, and a friendly summary after.
+function vPlacement(done) {
+  const pl = st.placement, going = S && S.mode === 'placement';
+  if (!done || !pl) {
+    const n = placementGroups().length * 2;
+    return page(`<h1>🧭 Starting test</h1><div class="hero">${buddy(`<b>Let's find your starting point!</b> ${n} questions from all four subjects. There is no timer and it does not matter if some are hard. It helps me pick the right level for you.`)}</div>
+      <div class="card"><ul><li>About 20 to 25 minutes. Take a break between subjects if you like.</li><li>Do your best, and guess if you are not sure.</li><li>You can stop and carry on later. Your place is saved.</li></ul>
+      ${pl ? `<p class="small muted">You took it on ${dOf(pl.day).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}. Taking it again sets new starting levels.</p>` : ''}
+      <button class="btn big" data-act="placement">${going ? 'Carry on with my starting test →' : pl ? 'Take it again →' : 'Start my starting test →'}</button></div>`);
+  }
+  const strong = pl.groups.filter(g => g.level === 3), work = pl.groups.filter(g => g.level === 1);
+  const chip = g => `<li>${subj(g.sid).icon} ${esc(g.name)}</li>`;
+  const p = studyPlan(), w = p.status === 'ok' ? p.weeks[p.cur] : null;
+  page(`<div class="hero">${buddy(`<h1 style="margin:0;font-size:1.35rem">You finished your starting test! 🎉</h1>You got ${pl.score} of ${pl.total}. Thank you for trying so hard.`, 'happy')}</div>
+    <div class="grid"><div class="card"><h3>💪 Your strengths</h3>${strong.length ? `<ul>${strong.map(chip).join('')}</ul>` : '<p class="small">Everything is still growing. Every lesson will make you stronger!</p>'}</div>
+      <div class="card"><h3>🌱 Topics to work on</h3>${work.length ? `<ul>${work.slice(0, 6).map(chip).join('')}</ul>${work.length > 6 ? `<p class="small muted">and ${work.length - 6} more</p>` : ''}` : '<p class="small">Nothing stood out. Brilliant!</p>'}</div></div>
+    <div class="card tablewrap"><h3>Your starting levels</h3><table><tbody>${pl.groups.map(g => `<tr><td>${subj(g.sid).icon} ${esc(g.name)}</td><td class="num">${g.r.map(x => x ? '✓' : '✗').join(' ')}</td><td class="num"><span class="pill ${g.level === 3 ? 'gold' : g.level === 1 ? 'grey' : ''}">${LEVEL[g.level]}</span></td></tr>`).join('')}</tbody></table></div>
+    <div class="card"><h2 style="margin-top:0">✅ Your plan is ready</h2><p>${w ? `${PHASES[w.phase].icon} This week: <b>${esc(PHASES[w.phase].kid)}</b>.` : 'Here is what to do this week.'} Tap Go to start.</p>
+      <ul class="plan">${weekItems(p, w).map(itemHTML).join('')}</ul>
+      ${p.status === 'ok' ? '' : '<p class="small muted">Ask a grown-up to add your exam date in the parent view, so the plan can stretch all the way to the test.</p>'}
+      <a class="btn big" href="#home" style="margin-top:.6rem">Go to my home page →</a></div>`);
+  if (awards.length) { const list = awards.slice(); awards = []; setTimeout(() => celebrate(list), 500); }
+  else if (!reduced()) confetti(60);
+}
+
 function vHome() {
-  const p = plan(), steps = planSteps(), mins = Math.round((st.time[today()] || 0) / 60), wd = new Date().getDay();
+  const p = plan(), steps = planSteps(), mins = Math.round((st.time[today()] || 0) / 60);
   const last = st.last && ready(st.last.subject) && topicOf(st.last.subject, st.last.topic);
   const first = B(p.sid).topics[0];
   const cont = last ? `<a class="btn big" href="#topic/${st.last.subject}/${st.last.topic}">Continue where you left off: ${esc(last.name)} →</a>`
@@ -886,7 +1178,7 @@ function vHome() {
   const rk = rank(), toNext = rk.next ? rk.next[0] - st.stars : 0;
   const say = allDone ? `<b>You finished today's plan. Amazing!</b> Anything extra is a bonus. Maybe try a new test?`
     : mins >= 20 ? `<b>${mins} minutes today. Super effort!</b> Time for a break and a snack.`
-    : !st.history.length ? `<b>Hello! I'm Ollie the owl.</b> I'll cheer you on. Let's start with your first lesson!`
+    : !st.history.length ? `<b>Hello! I'm Ollie the owl.</b> I'll cheer you on. Let's start with your starting test, then your first lesson!`
     : pick(FUN);
   page(`
     <h1>${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}${nm}! Ready to explore?</h1>
@@ -901,6 +1193,9 @@ function vHome() {
       <div class="tile"><b>⭐ <span class="count" data-n="${st.stars}">${st.stars}</span></b><span>stars</span></div>
       <div class="tile"><div class="mini-ring" style="--p:${Math.round(Math.min(1, mins / 15) * 100)}"><span>${mins}</span></div><span>of 15 minutes today</span></div>
     </div>
+    ${placementDone() ? '' : `<div class="card placecard"><h2 style="margin-top:0">🧭 ${S && S.mode === 'placement' ? 'Carry on with your starting test' : 'Take your starting test'}</h2>
+      <p>Quick questions from all four subjects, about 20 to 25 minutes, with no timer. It shows Ollie where to start in every topic and builds your plan.</p>
+      ${S && S.mode === 'placement' ? '<a class="btn big" href="#session">Carry on →</a>' : '<button class="btn big" data-act="placement">Start my starting test →</button>'}</div>`}
     <div style="margin:1rem 0">${cont}</div>
     <div class="card">
       <div class="row spread"><h2 style="margin:0">Today's plan</h2><span class="pill ${allDone ? 'gold' : ''}">${allDone ? '🎉 All done!' : `${done} of ${steps.length} done`}</span></div>
@@ -913,10 +1208,7 @@ function vHome() {
       <a class="card subject" href="#trophies" style="--c:#f08c00"><span class="ico">🏆</span><span><h3>Trophy room</h3><span class="muted small">${Object.keys(st.badges).length} awards so far. What's next?</span></span></a>
       <a class="card subject" href="#tips" style="--c:#2f9e44"><span class="ico">💡</span><span><h3>Exam tips</h3><span class="muted small">Tricks that add marks in every paper.</span></span></a>
     </div>
-    <div class="card">
-      <h2 style="margin-top:0">This week</h2>
-      <div class="week">${WEEK.map((w, i) => `<div class="${i === wd ? 'today' : ''}"><b>${DAYS[i]}</b>${esc(w.label)}</div>`).join('')}</div>
-    </div>`);
+    ${weekCardHTML()}`);
 }
 
 // "Who's learning today?" screen
@@ -1109,11 +1401,11 @@ function renderSession() {
   stamp();
   const it = S.items[S.idx], q = it.q, fb = !S.parts;
   const part = S.parts && S.parts[S.part], lo = part ? part.from : 0, hi = part ? part.to : S.items.length;
-  const total = S.mode === 'exercise' ? S.target : hi - lo, num = S.idx - lo + 1;
+  const total = S.mode === 'exercise' || S.mode === 'placement' ? S.target : hi - lo, num = S.idx - lo + 1;
   const answered = S.items.slice(lo, hi).filter(i => i.chosen !== null).length;
   const t = topicOf(q.subject, q.topic);
   const lastPart = part && S.part + 1 === S.parts.length, endWord = part ? (lastPart ? (S.mode === 'mock' ? 'Finish exam' : 'Finish test') : 'Finish section') : 'Finish';
-  const where = part ? part.name + (S.parts.length > 1 ? ` · section ${S.part + 1} of ${S.parts.length}` : '') : S.topic ? t.name : S.mode === 'fix' ? 'Second chances' : 'Mixed topics';
+  const where = part ? part.name + (S.parts.length > 1 ? ` · section ${S.part + 1} of ${S.parts.length}` : '') : S.topic ? t.name : S.mode === 'fix' ? 'Second chances' : S.mode === 'placement' ? subj(q.subject).name : 'Mixed topics';
   const tag = S.tags && S.tags[q.id];
   const helpful = S.mode === 'exercise' || S.mode === 'fix' || S.mode === 'quiz' || S.mode === 'revision';
   let h = `<div class="sess-head"><div><span class="pill ${S.hard ? 'hardp' : S.ai ? 'aip' : ''}">${S.hard ? '🔥 Challenge' : S.ai ? '✨ AI practice' : esc(S.label && part ? S.label : MODE[S.mode])}</span> <span class="muted">${esc(where)}</span></div>
@@ -1134,8 +1426,8 @@ function renderSession() {
     const ok = it.chosen === q.a, last = num >= total;
     h += `<div class="fb ${ok ? 'ok' : 'try'}" id="fbbox"><div class="fbhead ${ok ? 'happy' : ''}">${OWL}<h3>${ok ? esc(it.say) + ' <span class="plus">+1 ⭐</span>' : esc(it.say)}</h3></div>
       ${ok ? '' : `<p>You chose <b>${showOpt(q, it.chosen)}</b>. The answer is <b>${showOpt(q, q.a)}</b>.</p>`}
-      <p><b>${ok ? 'The method:' : 'Here is how to work it out, step by step:'}</b></p><ol class="steps">${q.steps.map(s => `<li>${rich(s)}</li>`).join('')}</ol>
-      ${!ok && t.lesson && t.lesson.watch ? `<div class="box watch"><b>Tip for ${esc(t.name.toLowerCase())}:</b> ${rich(t.lesson.watch)}</div>` : ''}
+      ${S.mode === 'placement' ? `<p class="small muted">${ok ? 'Great.' : 'No worries.'} This just helps Ollie choose the right level. Your plan will teach you the method.</p>` : `<p><b>${ok ? 'The method:' : 'Here is how to work it out, step by step:'}</b></p><ol class="steps">${q.steps.map(s => `<li>${rich(s)}</li>`).join('')}</ol>
+      ${!ok && t.lesson && t.lesson.watch ? `<div class="box watch"><b>Tip for ${esc(t.name.toLowerCase())}:</b> ${rich(t.lesson.watch)}</div>` : ''}`}
       ${S.msg === 'up' ? '<p><b>Level up!</b> Three in a row. The next questions are a bit trickier.</p>' : S.msg === 'down' ? '<p>Let\'s build confidence with some gentler questions next.</p>' : ''}
       <div class="row"><button class="btn" id="next" data-act="next">${last ? 'See how you did →' : 'Next question →'}</button>
       ${canSpeak() ? '<button class="btn ghost" data-act="speak" data-sel="#fbbox .steps,#fbbox .watch">🔊 Read the method</button>' : ''}
@@ -1680,11 +1972,6 @@ function vParent(note) {
   SUBJECTS.filter(s => ready(s.id)).forEach(s => B(s.id).topics.forEach(t => { const p = peek(s.id, t.id); if (p && p.seen >= 5 && accuracy(s.id, t.id) < 0.75) weak.push({ s, t, a: accuracy(s.id, t.id) }); }));
   weak.sort((a, b) => a.a - b.a);
   const timed = st.history.filter(isTimedEntry);
-  const n = daysToExam();
-  const phase = n === null ? 'Add the exam date in Settings to get a plan for the weeks ahead.'
-    : n > 120 ? '<b>Building foundations.</b> Learn two or three new topics a week, with an exercise and a quiz for each. One 10-minute test at the weekend.'
-    : n > 60 ? '<b>Mixing it up.</b> Keep learning the remaining topics, two timed tests a week, and a mock paper every fortnight. Use Fix my mistakes after every test.'
-    : n >= 0 ? '<b>Exam practice.</b> One mock paper a week under exam conditions, weak-spot tests on other days, and Fix my mistakes after each. Keep sessions short and positive.' : 'The exam date has passed. Update it in Settings if needed.';
   const untouched = SUBJECTS.filter(s => ready(s.id)).map(s => ({ s, n: B(s.id).topics.filter(t => !peek(s.id, t.id)).length, all: B(s.id).topics.length }));
   page(`<div class="row spread"><h1>🔒 Parent view</h1><div class="row noprint">${canPrint() ? '<button class="btn alt" data-act="print">🖨 Print or save as PDF</button>' : ''}<button class="btn ghost" data-act="lock">Lock</button></div></div>
     <p class="muted">${me().avatar} <b>${esc(me().name || 'Your child')}</b> · summary for ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}. ${countdownHTML()}</p>
@@ -1692,7 +1979,8 @@ function vParent(note) {
     ${msg}
     <div class="tiles four"><div class="tile"><b>${wkMins}</b><span>minutes this week</span></div><div class="tile"><b>${wk.length}</b><span>sessions this week</span></div>
       <div class="tile"><b>${wkQ ? Math.round(100 * wkOK / wkQ) + '%' : '–'}</b><span>right this week (${wkQ} questions)</span></div><div class="tile"><b>🔥 ${st.streak}</b><span>day streak</span></div></div>
-    <div class="card"><h3>Plan for now</h3><p>${phase}</p></div>
+    ${planCardHTML()}
+    ${placementCardHTML()}
     ${readinessCard()}
     <div class="card"><h3>Minutes practised, last 14 days</h3><div class="minbars">${days.map(d => { const m = Math.round((st.time[d] || 0) / 60); return `<div title="${d}: ${m} min"><i style="height:${Math.round(100 * m / maxM)}%"></i><span>${m || ''}</span><b>${DAYS[new Date(d + 'T12:00:00').getDay()][0]}</b></div>`; }).join('')}</div>
       <p class="small muted">Little and often works best: 15 to 20 minutes on most days.</p></div>
@@ -1770,7 +2058,8 @@ function vSettings(note) {
       <a class="btn alt" href="#who" style="margin-top:.5rem">➕ Add or switch child</a></div>
     <div class="card"><label for="examdate">Exam date</label>
       <input id="examdate" class="inp" type="date" value="${esc(st.settings.examDate || '')}" data-change="examdate">
-      <p class="muted small">Shows a countdown and adjusts the parent plan. The Kent Test is usually taken in early September at the start of Year 6. Check your council's website for the exact date.</p></div>
+      <p class="muted small">Shows a countdown and builds the week-by-week study plan (see the parent view). The Kent Test is usually taken in early September at the start of Year 6. Check your council's website for the exact date.</p>
+      <p class="small"><a href="#placement">🧭 ${st.placement ? 'Retake the starting test' : 'Take the starting test'}</a></p></div>
     <div class="card"><h3>Parent PIN</h3><p class="muted small">${meta.pin ? 'A PIN is set for the parent view.' : 'No PIN yet. You can set one when you first open the parent view.'}</p>
       <div class="row"><a class="btn alt" href="#parent">Open parent view</a>${meta.pin ? '<button class="btn ghost" data-act="clearpin">Remove PIN</button>' : ''}</div></div>
     <div class="card"><h3>Time spent (last 7 active days)</h3>${days.length ? `<table><tbody>${days.map(d => `<tr><td>${d.split('-').reverse().join('/')}</td><td class="num">${Math.round(st.time[d] / 60)} min</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">No sessions yet.</p>'}</div>
@@ -1820,6 +2109,7 @@ const ACT = {
     if (location.hash === was) vParent(`✅ The AI key works, using ${r.model}.${r.changed && r.was && r.was !== 'auto' ? ` (${r.was} is not available for this key, so the app switched.)` : ''} AI practice and AI papers are now available.`);
   }); },
   restartex: d => { if (S) finish(false); startExercise(d.sid, d.tid); },
+  placement: () => { if (S && S.mode === 'placement') { location.hash = '#session'; return; } startPlacement(); },
   test: d => startTest(d.sid),
   focus: d => startFocus(d.scope || 'all'),
   again: d => { const e = st.history.find(h => h.id === d.id); if (e) regenerate(e.cfg); },
@@ -1860,6 +2150,7 @@ const ACT = {
     if (S.parts) {
       if (S.idx + 1 >= S.parts[S.part].to) return ACT.finish();
     } else {
+      if (S.mode === 'placement' && S.idx + 1 >= S.items.length) placementGrow();
       const total = S.mode === 'exercise' ? S.target : S.items.length;
       if (S.idx + 1 >= total) return finish(true);
       if (S.mode === 'exercise' && S.idx + 1 >= S.items.length) {
@@ -1951,6 +2242,7 @@ const CHANGE = {
   name: el => { st.settings.name = el.value.trim().slice(0, 20) || null; me().name = st.settings.name || ''; saveMeta(); save(); if (location.hash.startsWith('#cert')) route(); else vSettings('Name saved.'); },
   sound: el => { st.settings.sound = el.checked; save(); chips(); },
   examdate: el => { st.settings.examDate = el.value || null; save(); vSettings(el.value ? 'Exam date saved.' : 'Exam date cleared.'); },
+  planexam: el => { st.settings.examDate = el.value || null; save(); vParent(el.value ? 'Exam date saved. The study plan has been built around it.' : 'Exam date cleared.'); },
   board: el => { st.settings.board = el.value; save(); vSettings('Exam setting saved.'); },
   import: el => {
     const f = el.files && el.files[0]; if (!f) return;
@@ -1994,6 +2286,7 @@ function route() {
     case 'topic': vTopic(h[1], h[2]); break;
     case 'lesson': vLesson(h[1], h[2]); break;
     case 'tests': vTests(); break;
+    case 'placement': vPlacement(h[1] === 'done'); break;
     case 'session':
       if (!S) { location.hash = '#home'; return; }
       if (S.parts && !S.between) { if (Date.now() >= S.deadline) { endPart(); break; } if (!timer) timer = setInterval(tick, 500); }
