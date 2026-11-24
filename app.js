@@ -145,6 +145,7 @@ function tidy(o, keep) {
     else if (id.startsWith('ai-') && !(o.aiq && o.aiq[id])) delete qs[id];
   });
   o.q = qs;
+  if (Array.isArray(o.writing) && o.writing.length > 60) o.writing = o.writing.slice().sort((x, y) => (y.ts || 0) - (x.ts || 0)).slice(0, 60);   // writing pieces: keep the newest 60
   // minutes per day older than two years become minutes per month
   if (o.time && typeof o.time === 'object') {
     // (whole months only, so two devices always agree on which months are summed up)
