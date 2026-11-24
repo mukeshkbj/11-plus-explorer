@@ -3,7 +3,7 @@
 import asyncio, json, os, re, sys, time
 from playwright.async_api import async_playwright
 
-APP = 'file://' + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'index.html')
+APP = os.environ.get('APP_URL') or 'file://' + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'index.html')
 SHOTS = os.environ.get('SHOTS', '/tmp/11plus-shots')
 CHROME = os.environ.get('CHROME', '/usr/bin/google-chrome')
 

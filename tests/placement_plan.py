@@ -4,7 +4,7 @@ import asyncio, json, os, re, datetime
 from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-URL = 'file://' + os.path.join(os.path.dirname(HERE), 'index.html')
+URL = os.environ.get('APP_URL') or 'file://' + os.path.join(os.path.dirname(HERE), 'index.html')
 SHOTS = os.environ.get('SHOTS', '/tmp/11plus-shots')
 os.makedirs(SHOTS, exist_ok=True)
 KEY = 'elevenplus.v1'

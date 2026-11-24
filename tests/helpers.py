@@ -3,7 +3,7 @@ CHROME=/path/to/chrome picks the browser; when it is unset (or missing) Playwrig
 import os, sys, json, pathlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TESTS = ROOT / 'tests'
-URL = (ROOT / 'index.html').as_uri()
+URL = os.environ.get('APP_URL') or (ROOT / 'index.html').as_uri()   # run_all.sh serves the app over http: Chrome sometimes drops file:// storage on reload
 FAKE = TESTS / 'fake-firebase'
 sys.path.insert(0, str(FAKE))
 

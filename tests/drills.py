@@ -5,7 +5,7 @@ import asyncio, json, os, re, sys
 from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-URL = 'file://' + ROOT + '/index.html'
+URL = os.environ.get('APP_URL') or 'file://' + ROOT + '/index.html'
 SHOTS = os.environ.get('SHOTS', '/tmp/11plus-shots')
 AZ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 fails = []

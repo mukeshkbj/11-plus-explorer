@@ -5,6 +5,13 @@
 set -u
 cd "$(dirname "$0")/.."
 fail=0; failed=()
+# Serve the app over http for the browser tests (Chrome sometimes loses file:// storage when a page reloads).
+PORT=${PORT:-8899}
+python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1 & HTTP_PID=$!
+trap 'kill $HTTP_PID 2>/dev/null' EXIT
+sleep 1
+export APP_URL="http://127.0.0.1:$PORT/index.html"
+
 run() { echo; echo "== $*"; if "$@"; then :; else fail=1; failed+=("$*"); fi; }
 run node tests/gen/check.js --n "${GEN_N:-600}"
 run node tests/gen/compat.js
