@@ -833,16 +833,48 @@ async function aiRequestOnce(prompt, maxTokens) {
         body: JSON.stringify({ model: c.model, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'You write 11+ practice questions. Reply with one JSON object only.' }, { role: 'user', content: prompt + '\n\nReply with JSON in this shape: {"passage": {"title": "", "kind": "story", "text": ""} (only when asked for a passage), "questions": [{"q": "", "opts": ["", "", "", "", ""], "a": 0, "hint": "", "steps": [""], "d": 2, "topic": ""}]}' }] }) });
     } else {
       res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': c.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model: c.model, max_tokens: Math.min(maxTokens || 12000, c.maxOut || 64000), tools: [{ name: 'save_questions', description: 'Save the finished, checked questions.', input_schema: AI_SCHEMA }], tool_choice: { type: 'tool', name: 'save_questions' }, messages: [{ role: 'user', content: prompt }] }) });
+        body: JSON.stringify(claudeBody(c, prompt, maxTokens)) });
     }
   } catch (e) { throw new Error('Could not reach the AI service. Check the internet connection and try again.'); }
   const text = await res.text();
-  if (!res.ok) throw aiError(res.status, text);
+  if (!res.ok) {
+    // Some models refuse a forced tool call. Remember that for this model and ask again, letting it choose the tool itself.
+    if (c.provider !== 'openai' && res.status === 400 && /tool_choice/i.test(text) && !noForcedTool(c.model)) {
+      setNoForcedTool(c.model); return aiRequestOnce(prompt, maxTokens);
+    }
+    throw aiError(res.status, text);
+  }
   let data; try { data = JSON.parse(text); } catch (e) { throw new Error('The AI sent back something unexpected. Please try again.'); }
   if (c.provider === 'openai') { try { return JSON.parse(data.choices[0].message.content); } catch (e) { throw new Error('The AI answer could not be read. Please try again.'); } }
-  const block = (data.content || []).find(b => b.type === 'tool_use');
-  if (!block) throw new Error('The AI answer could not be read. Please try again.');
-  return block.input;
+  const block = (data.content || []).find(b => b.type === 'tool_use' && b.name === 'save_questions');
+  if (block) return block.input;
+  // No tool call: look for the JSON in the written reply instead.
+  const said = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+  const j = jsonIn(said);
+  if (j && Array.isArray(j.questions)) return j;
+  if (data.stop_reason === 'max_tokens') throw new Error('The AI ran out of room before finishing. Try fewer questions, or try again.');
+  throw new Error('The AI answer could not be read. Please try again.');
+}
+// Models that refuse tool_choice "tool" (for example ones that always think first) are remembered on this device.
+const NOFORCE_KEY = 'elevenplus.ai.noforce';
+function noForcedTool(model) { try { return (JSON.parse(localStorage.getItem(NOFORCE_KEY) || '[]')).includes(model); } catch (e) { return false; } }
+function setNoForcedTool(model) { try { const l = JSON.parse(localStorage.getItem(NOFORCE_KEY) || '[]'); if (!l.includes(model)) l.push(model); localStorage.setItem(NOFORCE_KEY, JSON.stringify(l.slice(-20))); } catch (e) { /* only means asking twice next time */ } }
+function claudeBody(c, prompt, maxTokens) {
+  const tool = { name: 'save_questions', description: 'Save the finished, checked questions. Always call this exactly once with every question.', input_schema: AI_SCHEMA };
+  const b = { model: c.model, max_tokens: Math.min(maxTokens || 12000, c.maxOut || 64000), tools: [tool], messages: [{ role: 'user', content: prompt }] };
+  if (noForcedTool(c.model)) {
+    b.tool_choice = { type: 'auto' };
+    b.system = 'You write 11+ practice questions. When they are ready, call the save_questions tool once with all of them. Do not reply with the questions as text.';
+  } else b.tool_choice = { type: 'tool', name: 'save_questions' };
+  return b;
+}
+// The first {...} object in some text (also inside a ```json block).
+function jsonIn(t) {
+  if (!t) return null;
+  const m = t.match(/```(?:json)?\s*([\s\S]*?)```/); const src = m ? m[1] : t;
+  const a = src.indexOf('{'), z = src.lastIndexOf('}');
+  if (a < 0 || z <= a) return null;
+  try { return JSON.parse(src.slice(a, z + 1)); } catch (e) { return null; }
 }
 // AI difficulty levels. 'mixed' is a real-exam spread; 'hardmix' and 4 go beyond the usual Kent Test for children aiming high.
 const AI_LEVELS = {

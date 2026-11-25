@@ -23,10 +23,17 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(**launch_args())
         pg = await device(b)
-        calls = []
+        calls = []; mode = {'noforce': False}; choices = []
         async def handle(route):
             calls.append(route.request.headers.get('x-api-key'))
-            await route.fulfill(status=200, content_type='application/json', body=json.dumps(fake_reply(route.request.post_data)))
+            body = route.request.post_data
+            if mode['noforce'] and body:
+                tc = (json.loads(body).get('tool_choice') or {}).get('type'); choices.append(tc)
+                if tc in ('tool', 'any'):   # like a model that refuses a forced tool call
+                    return await route.fulfill(status=400, content_type='application/json', body=json.dumps({'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'tool_choice: type "tool" and "any" are not supported for this model.'}}))
+                out = fake_reply(body)['content'][0]['input']   # this model answers in text instead
+                return await route.fulfill(status=200, content_type='application/json', body=json.dumps({'content': [{'type': 'text', 'text': 'Here they are:\n```json\n' + json.dumps(out) + '\n```'}], 'stop_reason': 'end_turn'}))
+            await route.fulfill(status=200, content_type='application/json', body=json.dumps(fake_reply(body)))
         await pg.route('https://api.anthropic.com/**', handle)
         await pg.goto(URL); await pg.wait_for_timeout(400)
         if await pg.locator('#hello').count(): await pg.fill('#hello', 'Arjun'); await pg.click('form[data-submit=hello] button'); await pg.wait_for_timeout(200)
@@ -58,6 +65,19 @@ async def main():
         await pg.click('button[data-act=aimock][data-kind=full]'); await pg.wait_for_timeout(1500)
         if await pg.locator('button[data-act=warmdone]').count(): await pg.click('button[data-act=warmdone] >> nth=0'); await pg.wait_for_timeout(300)   # skip the practice warm-up
         C.ok('#session' in pg.url and await pg.locator('.passage').count() >= 1, 'an AI mock paper with a reading passage starts')
+        mode['noforce'] = True
+        await pg.goto(URL + '#home'); await pg.wait_for_timeout(100)
+        if await pg.locator('button[data-act=endsession]').count(): await pg.click('button[data-act=endsession]')
+        await pg.goto(URL + '#topic/maths/four_ops'); await pg.wait_for_timeout(200)
+        await pg.click('button[data-act=aiex][data-l="2"]'); await pg.wait_for_timeout(1500)
+        C.ok('#session' in pg.url and 'AI' in await pg.inner_text('.sess-head .pill'), f'a model that refuses forced tool calls still works ({choices})')
+        C.ok(choices[:2] == ['tool', 'auto'], 'it retries once without forcing the tool')
+        await pg.goto(URL + '#home'); await pg.wait_for_timeout(100)
+        if await pg.locator('button[data-act=endsession]').count(): await pg.click('button[data-act=endsession]')
+        n0 = len(choices)
+        await pg.goto(URL + '#topic/maths/four_ops'); await pg.wait_for_timeout(200)
+        await pg.click('button[data-act=aiex][data-l="2"]'); await pg.wait_for_timeout(1500)
+        C.ok(choices[n0:] == ['auto'], 'next time it goes straight to the request that works')
         C.ok(pg.errs == [], f'no page errors {pg.errs[:3]}')
         await b.close()
     C.done()
