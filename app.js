@@ -785,7 +785,14 @@ function apiMsg(body) { try { const j = JSON.parse(body); return String((j.error
 function aiError(status, body) {
   const m = apiMsg(body), why = m ? ` The AI service said: "${m.slice(0, 200)}"` : '';
   const err = t => { const e = new Error(t); e.status = status; return e; };
-  if (status === 401) return err('The API key was not accepted. Check it in the parent view (copy the whole key, with no spaces).' + why);
+  if (status === 401) {
+    const c = aiConf() || {}, k = c.key || '';
+    const tip = c.provider === 'anthropic' && !/^sk-ant-/.test(k) ? ' This does not look like a Claude key (those start with sk-ant-). If it is an OpenAI key, choose OpenAI as the AI company.'
+      : c.provider === 'openai' && /^sk-ant-/.test(k) ? ' This is a Claude key (it starts with sk-ant-). Choose Claude (Anthropic) as the AI company.'
+      : k.length < 90 && c.provider === 'anthropic' ? ` The saved key is only ${k.length} characters long; Claude keys are usually over 100, so part of it may be missing.`
+      : ' If it was copied correctly, the key may have been deleted or switched off. Make a new key at console.anthropic.com (Settings, then API keys), copy it straight away, and paste it in.';
+    return err('The API key was not accepted.' + tip + why);
+  }
   if (/credit balance|insufficient_quota|billing|exceeded your current quota/i.test(body || '')) return err('The AI account has no credit left. Add credit in your AI account (console.anthropic.com or platform.openai.com), then try again.');
   if (status === 404 || /not_found_error|model_not_found|does not exist|unknown model/i.test(body || '')) { const e = err('That AI model is not available for this key.' + why); e.notFound = true; return e; }
   if (status === 403) return err('This key is not allowed to use the AI service.' + why);
@@ -2578,7 +2585,10 @@ const SUBMIT = {
     switchChild(id); toast(`Welcome, ${name}! ${av}`);
   },
   aisave: () => {
-    const provider = ($('#aiprov') || {}).value || 'anthropic', key = (($('#aikey') || {}).value || '').trim(), model = (($('#aimodel') || {}).value || '').trim();
+    let provider = ($('#aiprov') || {}).value || 'anthropic'; const key = (($('#aikey') || {}).value || '').replace(/\s+/g, '').replace(/^["'`]+|["'`]+$/g, '').replace(/^(x-api-key:|Bearer)/i, ''), model = (($('#aimodel') || {}).value || '').trim();
+    // A Claude key saved under OpenAI (or the other way round) can never work, so pick the right company for it.
+    if (/^sk-ant-/.test(key) && provider !== 'anthropic') provider = 'anthropic';
+    else if (/^sk-(proj-|svcacct-|admin-)/.test(key) && provider !== 'openai') provider = 'openai';
     const old = aiConf() || {};
     const k = key || (old.provider === provider ? old.key : '');
     if (!k) return vParent('Please paste an API key.');
